@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env.local
+.env.*.local
+*.tsbuildinfo
+.DS_Store
+.vite/
+
+# wrangler
+.wrangler/

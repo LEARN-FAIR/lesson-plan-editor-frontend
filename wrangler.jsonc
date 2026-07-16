@@ -1,0 +1,24 @@
+{
+  "name": "lesson-plan-editor",
+  "compatibility_date": "2024-11-07",
+
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+
+  // Production environment
+  // Deploy with: npx wrangler deploy --env production
+  "env": {
+    "production": {
+      "name": "learn-fair-lesson-plan-editor-prod",
+      "assets": {
+        "directory": "./dist",
+        "not_found_handling": "single-page-application"
+      },
+      "routes": [
+        { "pattern": "editor.fairdata.education", "custom_domain": true }
+      ]
+    }
+  }
+}

@@ -1,0 +1,54 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build (production)
+        if: github.ref == 'refs/heads/main'
+        run: npm run build -- --mode production
+        env:
+          VITE_API_URL: https://api.editor.fairdata.education/api
+
+      - name: Build (development)
+        if: github.ref != 'refs/heads/main'
+        run: npm run build -- --mode development
+        env:
+          VITE_API_URL: https://api.editor.fairdata.education/api
+
+      - name: Deploy to production
+        if: github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: "4"
+          command: deploy --env production
+
+      - name: Get branch slug
+        if: github.ref != 'refs/heads/main'
+        id: branch
+        run: |
+          SLUG=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/-\+/-/g' | sed 's/^-\|-$//g')
+          echo "slug=$SLUG" >> $GITHUB_OUTPUT
+
+      - name: Deploy preview
+        if: github.ref != 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          wranglerVersion: "4"
+          command: deploy --name learn-fair-lesson-plan-editor-${{ steps.branch.outputs.slug }}
