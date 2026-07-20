@@ -19,5 +19,18 @@ export default defineConfig({
     },
     server: {
         port: 5173,
+        // In dev, proxy the API through the dev server so the frontend and backend
+        // share one origin (http://localhost:5173) — mirroring production, where
+        // editor. and api.editor.fairdata.education are same-site. This makes the
+        // GitHub session cookie first-party, so /api/auth/status is authenticated.
+        // Set VITE_API_URL=/api (see .env.development) so requests are relative.
+        proxy: {
+            '/api': {
+                target: 'https://localhost',
+                changeOrigin: true,
+                // The local backend uses a self-signed certificate.
+                secure: false,
+            },
+        },
     },
 })
