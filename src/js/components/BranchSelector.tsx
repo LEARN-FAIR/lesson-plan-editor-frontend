@@ -1,43 +1,36 @@
 import React, {useEffect, useState} from 'react';
 import {useQueryClient} from '@tanstack/react-query';
-import {
-    Alert,
-    Box,
-    Button,
-    CircularProgress,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogContentText,
-    DialogTitle,
-    FormControl,
-    InputLabel,
-    MenuItem,
-    Select,
-    TextField,
-    Typography
-} from '@mui/material';
-import type {SelectChangeEvent} from '@mui/material';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
-import AddIcon from '@mui/icons-material/Add';
-import WarningIcon from '@mui/icons-material/Warning';
+import {GitBranch, Plus, TriangleAlert} from 'lucide-react';
 import type {Branch, Repository} from '../types/github';
 import githubService from '../services/githubService';
 import apiAdapter from '../services/apiAdapter';
 import logger from '../utils/logger';
 import {useBranches} from '../services/githubRepoQueryHooks';
+import {Button} from './ui/button';
+import {Input} from './ui/input';
+import {Label} from './ui/label';
+import {Alert} from './ui/alert';
+import {Spinner} from './ui/spinner';
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from './ui/select';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from './ui/dialog';
 
 interface BranchSelectorProps {
     onBranchSelected: (branch: string) => void;
     onBack?: () => void;
     repository?: Repository;
-    repoId?: number; // Add repoId prop to trigger refresh when repo changes
+    repoId?: number;
 }
 
-const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, onBack, repository, repoId}) => {
+const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, repository, repoId}) => {
     const queryClient = useQueryClient();
 
-    // All useState hooks must be at the top
     const [selectedBranch, setSelectedBranch] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState<boolean>(false);
@@ -49,78 +42,54 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, onBack
     const [isAppInstallDialogOpen, setIsAppInstallDialogOpen] = useState<boolean>(false);
     const [installationUrl, setInstallationUrl] = useState<string>('');
 
-    // All useRef hooks must be at the top
     const accessCheckRef = React.useRef(false);
     const branchInitializedRef = React.useRef(false);
 
-    // Use repository from props
     const repo = repository;
 
-    // Use React Query to fetch branches
-    const {
-        data: branchesData = [],
-        isLoading: loading,
-        error: branchQueryError,
-    } = useBranches(repo?.owner.login, repo?.name);
+    const {data: branchesData = [], isLoading: loading, error: branchQueryError} = useBranches(
+        repo?.owner.login,
+        repo?.name,
+    );
 
-    // Filter out the main branch - we don't want to allow direct edits to main
+    // Filter out the main branch - we don't allow direct edits to main.
     const branches = branchesData.filter((branch: Branch) => branch.name !== 'main');
 
-    // All useEffect hooks must be at the top (after other hooks)
-    // Set error from query
-    React.useEffect(() => {
+    useEffect(() => {
         if (branchQueryError) {
             setError((branchQueryError as Error).message);
         }
     }, [branchQueryError]);
 
-    // Separate useEffect for access check - runs only once when branches are loaded
     useEffect(() => {
-        // Only run once when branches are first loaded
         if (branches.length > 0 && !loading && !accessCheckRef.current && !hasWriteAccess) {
-            // Use a timeout to prevent immediate re-renders
             const timer = setTimeout(() => {
                 checkRepositoryAccess();
             }, 1000);
             return () => clearTimeout(timer);
         }
-    }, [loading]); // Only depend on loading state to prevent loops
+    }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Set up selected branch when branches are loaded - runs only once
     useEffect(() => {
         if (branches.length > 0 && !loading && !branchInitializedRef.current) {
-            // Mark as initialized to prevent future runs
             branchInitializedRef.current = true;
-
-            // Auto-select the first available branch
             setSelectedBranch(branches[0].name);
-            // Notify parent component of the selection
             onBranchSelected(branches[0].name);
         }
-    }, [branches, loading, onBranchSelected]); // Include onBranchSelected in dependencies
+    }, [branches, loading, onBranchSelected]);
 
-    // Reset branch selection when repository changes
     useEffect(() => {
         if (repo) {
-            // Reset branch selection state when repo changes
             setSelectedBranch('');
             branchInitializedRef.current = false;
             refreshBranches();
         }
-    }, [repoId]);
+    }, [repoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Function definitions (must be before early returns)
     const checkRepositoryAccess = async () => {
         if (!repo) return false;
-
-        // Skip access check if we already know the result or already checking
-        if (hasWriteAccess || accessCheckRef.current) {
-            return hasWriteAccess;
-        }
-
-        // Set flag to prevent concurrent checks
+        if (hasWriteAccess || accessCheckRef.current) return hasWriteAccess;
         accessCheckRef.current = true;
-
         try {
             const hasAccess = await githubService.checkRepositoryWriteAccess(repo.owner.login, repo.name);
             setHasWriteAccess(hasAccess);
@@ -130,7 +99,6 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, onBack
             setHasWriteAccess(false);
             return false;
         } finally {
-            // Reset after a delay to allow for potential retries later
             setTimeout(() => {
                 accessCheckRef.current = false;
             }, 5000);
@@ -143,99 +111,34 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, onBack
         }
     };
 
-    // Handle branch selection
-    const handleBranchChange = (event: SelectChangeEvent) => {
-        const branchName = event.target.value;
+    const handleBranchChange = (branchName: string) => {
         setSelectedBranch(branchName);
         onBranchSelected(branchName);
     };
 
-    if (!repo) {
-        return (
-            <div>
-                <Typography variant="h6" color="error">
-                    No repository selected
-                </Typography>
-            </div>
-        );
-    }
-
-    if (loading) {
-        return (
-            <div style={{display: 'flex', justifyContent: 'center', padding: '20px'}}>
-                <CircularProgress/>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div>
-                <Alert severity="error">
-                    Error loading branches: {error}
-                </Alert>
-            </div>
-        );
-    }
-
-    if (branches.length === 0) {
-        return (
-            <div>
-                <Alert severity="info">
-                    No branches available for editing. Only the main branch exists.
-                </Alert>
-            </div>
-        );
-    }
-
-    // State variables are now declared at the top of the component
-
-    // Functions are now defined at the top of the component
-
-    // All useEffect hooks are now at the top of the component
-
-    // Handle opening the create branch dialog
     const handleOpenCreateDialog = async () => {
-        const repo = repository;
         if (!repo) return;
-
-        // Check if user has write access to the repository
         const hasAccess = await checkRepositoryAccess();
-
         if (!hasAccess) {
-            // Generate installation URL
-            const url = githubService.getAppInstallationUrl(repo.owner.login, repo.name);
-            setInstallationUrl(url);
+            setInstallationUrl(githubService.getAppInstallationUrl(repo.owner.login, repo.name));
             setIsAppInstallDialogOpen(true);
             return;
         }
-
-        setSourceBranch(selectedBranch || (repo?.default_branch || ''));
+        setSourceBranch(selectedBranch || repo.default_branch || '');
         setNewBranchName('');
         setCreateError(null);
         setIsCreateDialogOpen(true);
     };
 
-    // Handle closing the create branch dialog
-    const handleCloseCreateDialog = () => {
-        setIsCreateDialogOpen(false);
-    };
-
-    // Handle creating a new branch
     const handleCreateBranch = async () => {
         if (!newBranchName) {
             setCreateError('Branch name is required');
             return;
         }
-
-        // Validate branch name (no spaces, special characters, etc.)
-        const branchNameRegex = /^[\w.-]+$/;
-        if (!branchNameRegex.test(newBranchName)) {
+        if (!/^[\w.-]+$/.test(newBranchName)) {
             setCreateError('Branch name can only contain letters, numbers, hyphens, underscores, and periods');
             return;
         }
-
-        // Check if branch already exists
         if (branches.some((b: Branch) => b.name === newBranchName)) {
             setCreateError(`Branch '${newBranchName}' already exists`);
             return;
@@ -243,226 +146,202 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, onBack
 
         setCreatingBranch(true);
         setCreateError(null);
-
         try {
-            // Check repository access again before creating branch
             const hasAccess = await checkRepositoryAccess();
-            if (!hasAccess) {
-                const repo = repository;
-                if (repo) {
-                    const url = githubService.getAppInstallationUrl(repo.owner.login, repo.name);
-                    setInstallationUrl(url);
-                    handleCloseCreateDialog();
-                    setIsAppInstallDialogOpen(true);
-                    return;
-                }
+            if (!hasAccess && repository) {
+                setInstallationUrl(githubService.getAppInstallationUrl(repository.owner.login, repository.name));
+                setIsCreateDialogOpen(false);
+                setIsAppInstallDialogOpen(true);
+                return;
             }
-
-            // Create the branch via API adapter
             if (repository) {
                 await apiAdapter.createBranch(repository.owner.login, repository.name, newBranchName, selectedBranch);
             }
         } catch (err) {
             logger.error('Error creating branch:', err);
-
-            // Check if this is a permissions error
             const errorMessage = (err as Error).message;
-            if (errorMessage.includes('Resource not accessible by integration')) {
-                const repo = repository;
-                if (repo) {
-                    const url = githubService.getAppInstallationUrl(repo.owner.login, repo.name);
-                    setInstallationUrl(url);
-                    handleCloseCreateDialog();
-                    setIsAppInstallDialogOpen(true);
-                    return;
-                }
+            if (errorMessage.includes('Resource not accessible by integration') && repository) {
+                setInstallationUrl(githubService.getAppInstallationUrl(repository.owner.login, repository.name));
+                setIsCreateDialogOpen(false);
+                setIsAppInstallDialogOpen(true);
+                return;
             }
-
             setCreateError(`Failed to create branch: ${errorMessage}`);
         } finally {
             setCreatingBranch(false);
         }
     };
 
-    // Handle closing the app installation dialog
-    const handleCloseAppInstallDialog = () => {
+    const handleOpenAppInstallation = () => {
+        window.open(installationUrl, '_blank');
         setIsAppInstallDialogOpen(false);
     };
 
-    // Handle opening the app installation URL
-    const handleOpenAppInstallation = () => {
-        window.open(installationUrl, '_blank');
-        handleCloseAppInstallDialog();
-    };
+    if (!repo) {
+        return <div className="text-sm font-semibold text-destructive">No repository selected</div>;
+    }
+
+    if (loading) {
+        return (
+            <div className="flex justify-center p-5">
+                <Spinner />
+            </div>
+        );
+    }
+
+    if (error) {
+        return <Alert variant="error">Error loading branches: {error}</Alert>;
+    }
+
+    if (branches.length === 0) {
+        return (
+            <div className="max-w-xl">
+                <Alert variant="info" className="mb-3">
+                    No branches available for editing. Only the main branch exists.
+                </Alert>
+                <Button variant="outline" onClick={handleOpenCreateDialog}>
+                    <Plus className="h-4 w-4" />
+                    Create new branch
+                </Button>
+                {renderDialogs()}
+            </div>
+        );
+    }
+
+    function renderDialogs() {
+        return (
+            <>
+                {/* Create branch dialog */}
+                <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Create new branch</DialogTitle>
+                            <DialogDescription>
+                                Create a new branch based on an existing branch. The new branch will contain all the
+                                same files and commit history as the source branch.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        {createError && <Alert variant="error">{createError}</Alert>}
+
+                        <div>
+                            <Label htmlFor="new-branch-name" className="mb-1.5 block">
+                                New branch name
+                            </Label>
+                            <Input
+                                id="new-branch-name"
+                                autoFocus
+                                value={newBranchName}
+                                onChange={(e) => setNewBranchName(e.target.value)}
+                                placeholder="my-feature-branch"
+                            />
+                        </div>
+
+                        <div>
+                            <Label className="mb-1.5 block">Source branch</Label>
+                            <Select value={sourceBranch} onValueChange={setSourceBranch}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a source branch" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {branches.map((branch: Branch) => (
+                                        <SelectItem key={branch.name} value={branch.name}>
+                                            {branch.name}
+                                        </SelectItem>
+                                    ))}
+                                    {!branches.some((b: Branch) => b.name === 'main') && (
+                                        <SelectItem value="main">main</SelectItem>
+                                    )}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        <DialogFooter>
+                            <Button variant="secondary" onClick={() => setIsCreateDialogOpen(false)}>
+                                Cancel
+                            </Button>
+                            <Button onClick={handleCreateBranch} disabled={creatingBranch || !newBranchName}>
+                                {creatingBranch ? <Spinner size={16} className="text-white" /> : null}
+                                Create
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* App install dialog */}
+                <Dialog open={isAppInstallDialogOpen} onOpenChange={setIsAppInstallDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <TriangleAlert className="h-5 w-5 text-amber-500" />
+                                GitHub App installation required
+                            </DialogTitle>
+                            <DialogDescription>
+                                To create branches or commit changes, you need to install the GitHub App for this
+                                repository.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <Alert variant="info">
+                            <div className="mb-1 font-semibold">Installation steps:</div>
+                            <ol className="ml-5 list-decimal space-y-0.5">
+                                <li>Click the "Install GitHub App" button below</li>
+                                <li>On the GitHub page, select your organization/account</li>
+                                <li>Choose the repository you want to install the app on</li>
+                                <li>Click "Install" to complete the process</li>
+                                <li>Return to this page and try again</li>
+                            </ol>
+                        </Alert>
+
+                        {repo && (
+                            <div className="rounded-md border border-border bg-background p-2">
+                                <div className="text-xs text-muted-foreground">Selected repository</div>
+                                <div className="text-sm">{repo.full_name}</div>
+                            </div>
+                        )}
+
+                        <DialogFooter>
+                            <Button variant="secondary" onClick={() => setIsAppInstallDialogOpen(false)}>
+                                Cancel
+                            </Button>
+                            <Button onClick={handleOpenAppInstallation}>Install GitHub App</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </>
+        );
+    }
 
     return (
-        <Box sx={{maxWidth: 600, mt: 2}}>
-            {error && <Alert severity="error" sx={{mb: 2}}>{error}</Alert>}
+        <div className="max-w-xl">
+            {error && <Alert variant="error" className="mb-3">{error}</Alert>}
 
-            {branches.length > 0 ? (
-                <>
-                    <FormControl fullWidth margin="normal">
-                        <InputLabel id="branch-select-label">Branch</InputLabel>
-                        <Select
-                            labelId="branch-select-label"
-                            id="branch-select"
-                            value={selectedBranch}
-                            label="Branch"
-                            onChange={handleBranchChange}
-                            startAdornment={<AccountTreeIcon sx={{mr: 1, color: 'action.active'}}/>}
-                        >
-                            {branches.map((branch: Branch) => (
-                                <MenuItem key={branch.name} value={branch.name}>
-                                    {branch.name}
-                                </MenuItem>
-                            ))}
-                        </Select>
-                    </FormControl>
+            <Label className="mb-1.5 block">Branch</Label>
+            <Select value={selectedBranch} onValueChange={handleBranchChange}>
+                <SelectTrigger>
+                    <span className="flex items-center gap-2">
+                        <GitBranch className="h-4 w-4 text-muted-foreground" />
+                        <SelectValue placeholder="Select a branch" />
+                    </span>
+                </SelectTrigger>
+                <SelectContent>
+                    {branches.map((branch: Branch) => (
+                        <SelectItem key={branch.name} value={branch.name}>
+                            {branch.name}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
 
-                    <Box sx={{mt: 2, display: 'flex', justifyContent: 'flex-start'}}>
-                        <Button
-                            startIcon={<AddIcon/>}
-                            onClick={handleOpenCreateDialog}
-                            variant="outlined"
-                            color="primary"
-                        >
-                            Create New Branch
-                        </Button>
-                    </Box>
-                </>
-            ) : (
-                <>
-                    <Alert severity="info" sx={{mb: 2}}>No branches found in this repository.</Alert>
-                    <Button
-                        startIcon={<AddIcon/>}
-                        onClick={handleOpenCreateDialog}
-                        variant="outlined"
-                        color="primary"
-                    >
-                        Create New Branch
-                    </Button>
-                </>
-            )}
+            <div className="mt-3">
+                <Button variant="outline" onClick={handleOpenCreateDialog}>
+                    <Plus className="h-4 w-4" />
+                    Create new branch
+                </Button>
+            </div>
 
-            {/* Create Branch Dialog */}
-            <Dialog open={isCreateDialogOpen} onClose={handleCloseCreateDialog}>
-                <DialogTitle>Create New Branch</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
-                        Create a new branch based on an existing branch. The new branch will contain all the
-                        same files and commit history as the source branch.
-                    </DialogContentText>
-
-                    {createError && (
-                        <Alert severity="error" sx={{mt: 2, mb: 2}}>
-                            {createError}
-                        </Alert>
-                    )}
-
-                    <TextField
-                        autoFocus
-                        margin="dense"
-                        id="branch-name"
-                        label="New Branch Name"
-                        type="text"
-                        fullWidth
-                        variant="outlined"
-                        value={newBranchName}
-                        onChange={(e) => setNewBranchName(e.target.value)}
-                        sx={{mt: 2}}
-                    />
-
-                    <FormControl fullWidth margin="normal">
-                        <InputLabel id="source-branch-label">Source Branch</InputLabel>
-                        <Select
-                            labelId="source-branch-label"
-                            id="source-branch"
-                            value={sourceBranch}
-                            label="Source Branch"
-                            onChange={(e) => setSourceBranch(e.target.value)}
-                        >
-                            {branches.map((branch: Branch) => (
-                                <MenuItem key={branch.name} value={branch.name}>
-                                    {branch.name}
-                                </MenuItem>
-                            ))}
-                            {/* Include main branch as a source option */}
-                            {!branches.some((b: Branch) => b.name === 'main') && (
-                                <MenuItem value="main">main</MenuItem>
-                            )}
-                        </Select>
-                    </FormControl>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleCloseCreateDialog}>Cancel</Button>
-                    <Button
-                        onClick={handleCreateBranch}
-                        variant="contained"
-                        color="primary"
-                        disabled={creatingBranch || !newBranchName}
-                    >
-                        {creatingBranch ? <CircularProgress size={24}/> : 'Create'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
-
-            {/* GitHub App Installation Dialog */}
-            <Dialog open={isAppInstallDialogOpen} onClose={handleCloseAppInstallDialog}>
-                <DialogTitle>
-                    <Box display="flex" alignItems="center">
-                        <WarningIcon color="warning" sx={{mr: 1}}/>
-                        GitHub App Installation Required
-                    </Box>
-                </DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
-                        To create branches or commit changes, you need to install the GitHub App for this
-                        repository.
-                        This will grant the necessary permissions to create branches and make commits.
-                    </DialogContentText>
-
-                    <Alert severity="info" sx={{mt: 2, mb: 2}}>
-                        <Typography variant="body2" gutterBottom>
-                            <strong>Installation steps:</strong>
-                        </Typography>
-                        <ol style={{marginTop: 0, paddingLeft: '1.5rem'}}>
-                            <li>Click the "Install GitHub App" button below</li>
-                            <li>On the GitHub page, select your organization/account</li>
-                            <li>Choose the repository you want to install the app on</li>
-                            <li>Click "Install" to complete the process</li>
-                            <li>Return to this page and try again</li>
-                        </ol>
-                    </Alert>
-
-                    {repo && (
-                        <Box sx={{
-                            mt: 2,
-                            p: 2,
-                            bgcolor: 'background.paper',
-                            borderRadius: 1,
-                            border: '1px solid',
-                            borderColor: 'divider'
-                        }}>
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>Selected
-                                Repository</Typography>
-                            <Typography variant="body1">
-                                {repo.full_name}
-                            </Typography>
-                        </Box>
-                    )}
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleCloseAppInstallDialog}>Cancel</Button>
-                    <Button
-                        onClick={handleOpenAppInstallation}
-                        variant="contained"
-                        color="primary"
-                    >
-                        Install GitHub App
-                    </Button>
-                </DialogActions>
-            </Dialog>
-        </Box>
+            {renderDialogs()}
+        </div>
     );
 };
 

@@ -1,12 +1,10 @@
-import React, { useEffect } from 'react';
 import {BrowserRouter as Router, Navigate, Route, Routes} from 'react-router-dom';
-import {CssBaseline, ThemeProvider} from '@mui/material';
-import theme from './theme/theme';
 
 // Pages
 import EditorPage from './pages/EditorPage';
 import SetupPage from './pages/SetupPage';
 import LoginPage from './pages/LoginPage';
+import EditorPreview from './pages/EditorPreview'; // TEMP: redesign preview harness
 
 // Components
 import GitHubCallback from './pages/GitHubCallback';
@@ -18,31 +16,34 @@ import {AuthProvider} from './contexts/AuthContext';
 
 function App() {
     return (
-        <ThemeProvider theme={theme}>
-            <AuthProvider>
-                <Router>
-                    <Layout>
-                        <CssBaseline/>
-                        <Routes>
-                            {/* Login Page Route */}
-                            <Route path="/login" element={<LoginPage/>}/>
+        <AuthProvider>
+            <Router>
+                <Layout>
+                    <Routes>
+                        {/* TEMP: redesign preview (no auth) */}
+                        <Route path="/preview-editor" element={<EditorPreview/>}/>
 
-                            {/* Setup Page Route */}
-                            <Route path="/" element={<ProtectedRoute element={<SetupPage/>} />} />
+                        {/* Login Page Route */}
+                        <Route path="/login" element={<LoginPage/>}/>
 
-                            {/* Editor Page Route */}
-                            <Route path="/editor/:owner/:repo/:branch/:category/:lesson" element={<ProtectedRoute element={<EditorPage/>} />} />
+                        {/* Setup Page Route */}
+                        <Route path="/" element={<ProtectedRoute element={<SetupPage/>}/>}/>
 
-                            {/* GitHub OAuth Callback */}
-                            <Route path="/github-callback" element={<GitHubCallback/>}/>
+                        {/* Editor Page Route */}
+                        <Route
+                            path="/editor/:owner/:repo/:branch/:category/:lesson"
+                            element={<ProtectedRoute element={<EditorPage/>}/>}
+                        />
 
-                            {/* Catch-all redirect */}
-                            <Route path="*" element={<Navigate to="/" replace/>}/>
-                        </Routes>
-                    </Layout>
-                </Router>
-            </AuthProvider>
-        </ThemeProvider>
+                        {/* GitHub OAuth Callback */}
+                        <Route path="/github-callback" element={<GitHubCallback/>}/>
+
+                        {/* Catch-all redirect */}
+                        <Route path="*" element={<Navigate to="/" replace/>}/>
+                    </Routes>
+                </Layout>
+            </Router>
+        </AuthProvider>
     );
 }
 
