@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {useQueryClient} from '@tanstack/react-query';
-import {Check, ChevronRight, GitFork, Search, Tag, Undo2, X} from 'lucide-react';
+import {Check, ChevronRight, GitFork, Search, X} from 'lucide-react';
 import logger from '../utils/logger';
 import type {Repository} from '../types/github';
 import type {LessonPlan} from '../types/lessonPlan';
@@ -10,10 +10,10 @@ import BranchSelector from '../components/BranchSelector';
 import {Button} from './ui/button';
 import {Input} from './ui/input';
 import {Card} from './ui/card';
-import {Badge} from './ui/badge';
 import {Alert} from './ui/alert';
 import {Avatar, AvatarFallback, AvatarImage} from './ui/avatar';
-import {Accordion, AccordionContent, AccordionItem, AccordionTrigger} from './ui/accordion';
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from './ui/select';
+import {ToggleGroup, ToggleGroupItem} from './ui/toggle-group';
 import {Spinner} from './ui/spinner';
 import {initialsOf} from './editor/editorTypes';
 import {cn} from '../lib/utils';
@@ -55,7 +55,6 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
 
     const [lessonPlanError, setLessonPlanError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState<string>('');
-    const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
     const groupLessonPlansByCategory = (plans: LessonPlan[]): CategoryGroup[] => {
         const categorizedPlans: CategoryGroup[] = [];
@@ -104,16 +103,10 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
     };
 
     useEffect(() => {
-        if (lessonPlans.length > 0) {
-            const categories = groupLessonPlansByCategory(lessonPlans);
-            if (categories.length > 0) {
-                setExpandedCategory(categories[0].category);
-            }
-        }
         if (lessonPlanQueryError) {
             setLessonPlanError((lessonPlanQueryError as Error).message);
         }
-    }, [lessonPlans, lessonPlanQueryError]);
+    }, [lessonPlanQueryError]);
 
     const handleNext = () => {
         if (activeStep === 0 && selectedRepo) {
@@ -195,34 +188,56 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
                                                     <Alert variant="error">{repoError}</Alert>
                                                 ) : (
                                                     <>
-                                                        <div className="flex flex-col gap-2">
-                                                            {repositories.map((repo: Repository) => {
-                                                                const selected = selectedRepo?.id === repo.id;
-                                                                return (
-                                                                    <button
-                                                                        key={repo.id}
-                                                                        type="button"
-                                                                        onClick={() => handleRepoSelected(repo)}
-                                                                        className={cn(
-                                                                            'flex w-full cursor-pointer appearance-none items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors',
-                                                                            selected
-                                                                                ? 'border-navy bg-teal-surface'
-                                                                                : 'border-border bg-background hover:bg-accent',
-                                                                        )}
-                                                                    >
-                                                                        <Avatar className="h-8 w-8">
-                                                                            <AvatarImage src={repo.owner.avatar_url} alt={repo.owner.login} />
-                                                                            <AvatarFallback className="bg-zinc-200 text-xs">
-                                                                                {initialsOf(repo.owner.login)}
+                                                        <Select
+                                                            value={selectedRepo ? String(selectedRepo.id) : ''}
+                                                            onValueChange={(id) => {
+                                                                const repo = repositories.find(
+                                                                    (r: Repository) => String(r.id) === id,
+                                                                );
+                                                                if (repo) handleRepoSelected(repo);
+                                                            }}
+                                                        >
+                                                            <SelectTrigger className="h-auto py-2">
+                                                                {selectedRepo ? (
+                                                                    <span className="flex items-center gap-2">
+                                                                        <Avatar className="h-6 w-6">
+                                                                            <AvatarImage
+                                                                                src={selectedRepo.owner.avatar_url}
+                                                                                alt={selectedRepo.owner.login}
+                                                                            />
+                                                                            <AvatarFallback className="bg-zinc-200 text-[10px]">
+                                                                                {initialsOf(selectedRepo.owner.login)}
                                                                             </AvatarFallback>
                                                                         </Avatar>
                                                                         <span className="text-sm font-medium text-zinc-900">
-                                                                            {repo.full_name}
+                                                                            {selectedRepo.full_name}
                                                                         </span>
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
+                                                                    </span>
+                                                                ) : (
+                                                                    <SelectValue placeholder="Select a repository" />
+                                                                )}
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                {repositories.map((repo: Repository) => (
+                                                                    <SelectItem key={repo.id} value={String(repo.id)}>
+                                                                        <span className="flex items-center gap-2">
+                                                                            <Avatar className="h-6 w-6">
+                                                                                <AvatarImage
+                                                                                    src={repo.owner.avatar_url}
+                                                                                    alt={repo.owner.login}
+                                                                                />
+                                                                                <AvatarFallback className="bg-zinc-200 text-[10px]">
+                                                                                    {initialsOf(repo.owner.login)}
+                                                                                </AvatarFallback>
+                                                                            </Avatar>
+                                                                            <span className="text-sm font-medium text-zinc-900">
+                                                                                {repo.full_name}
+                                                                            </span>
+                                                                        </span>
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
 
                                                         <div className="mt-4">
                                                             <Button variant="outline" onClick={handleCreateFork}>
@@ -266,31 +281,6 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
                                                     <div className="flex justify-center py-6">
                                                         <Spinner />
                                                     </div>
-                                                ) : selectedLessonPlan ? (
-                                                    <Card className="mt-2 p-4">
-                                                        {selectedLessonPlan.category &&
-                                                            typeof selectedLessonPlan.category === 'object' &&
-                                                            'title' in selectedLessonPlan.category && (
-                                                                <Badge variant="meta" className="mb-1 gap-1">
-                                                                    <Tag className="h-3 w-3" />
-                                                                    {selectedLessonPlan.category.title}
-                                                                </Badge>
-                                                            )}
-                                                        <div className="mt-1 font-semibold text-zinc-900">
-                                                            {getLessonPlanTitle(selectedLessonPlan)}
-                                                        </div>
-                                                        <div className="mb-2 text-sm text-muted-foreground">
-                                                            {selectedLessonPlan.name}
-                                                        </div>
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => setSelectedLessonPlan(null)}
-                                                        >
-                                                            <Undo2 className="h-4 w-4" />
-                                                            Change selection
-                                                        </Button>
-                                                    </Card>
                                                 ) : (
                                                     <>
                                                         <div className="relative mb-3">
@@ -313,46 +303,45 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
                                                             )}
                                                         </div>
 
-                                                        <Accordion
+                                                        <ToggleGroup
                                                             type="single"
-                                                            collapsible
-                                                            value={expandedCategory ?? ''}
-                                                            onValueChange={(v) => setExpandedCategory(v || null)}
-                                                            className="rounded-md border border-border"
+                                                            variant="outline"
+                                                            value={selectedLessonPlan?.path ?? ''}
+                                                            onValueChange={(path) => {
+                                                                const plan = lessonPlans.find((p) => p.path === path);
+                                                                if (plan) handleLessonPlanSelected(plan);
+                                                            }}
+                                                            className="flex-col items-stretch gap-3"
                                                         >
                                                             {groupLessonPlansByCategory(filterLessonPlans(lessonPlans)).map(
                                                                 (categoryGroup) => (
-                                                                    <AccordionItem
-                                                                        key={categoryGroup.category}
-                                                                        value={categoryGroup.category}
-                                                                        className="px-3 last:border-b-0"
-                                                                    >
-                                                                        <AccordionTrigger>
+                                                                    <div key={categoryGroup.category} className="flex flex-col gap-1">
+                                                                        <div className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                                                             {categoryGroup.category} ({categoryGroup.plans.length})
-                                                                        </AccordionTrigger>
-                                                                        <AccordionContent>
-                                                                            <div className="flex flex-col gap-1">
-                                                                                {categoryGroup.plans.map((plan) => (
-                                                                                    <button
-                                                                                        key={plan.path}
-                                                                                        type="button"
-                                                                                        onClick={() => handleLessonPlanSelected(plan)}
-                                                                                        className="flex w-full cursor-pointer appearance-none flex-col rounded-md border-0 bg-transparent px-2 py-1.5 text-left transition-colors hover:bg-accent"
-                                                                                    >
-                                                                                        <span className="text-sm font-medium text-zinc-900">
-                                                                                            {getLessonPlanTitle(plan)}
-                                                                                        </span>
-                                                                                        <span className="text-xs text-muted-foreground">
-                                                                                            {plan.name}
-                                                                                        </span>
-                                                                                    </button>
-                                                                                ))}
-                                                                            </div>
-                                                                        </AccordionContent>
-                                                                    </AccordionItem>
+                                                                        </div>
+                                                                        {categoryGroup.plans.map((plan) => (
+                                                                            <ToggleGroupItem
+                                                                                key={plan.path}
+                                                                                value={plan.path}
+                                                                                className="h-auto justify-start px-3 py-2 text-left"
+                                                                            >
+                                                                                <span className="flex flex-1 flex-col items-start">
+                                                                                    <span className="text-sm font-medium text-zinc-900">
+                                                                                        {getLessonPlanTitle(plan)}
+                                                                                    </span>
+                                                                                    <span className="text-xs font-normal text-muted-foreground">
+                                                                                        {plan.name}
+                                                                                    </span>
+                                                                                </span>
+                                                                                {selectedLessonPlan?.path === plan.path && (
+                                                                                    <Check className="h-4 w-4 flex-shrink-0 text-navy" />
+                                                                                )}
+                                                                            </ToggleGroupItem>
+                                                                        ))}
+                                                                    </div>
                                                                 ),
                                                             )}
-                                                        </Accordion>
+                                                        </ToggleGroup>
 
                                                         {filterLessonPlans(lessonPlans).length === 0 && (
                                                             <Alert variant="info" className="mt-2">
