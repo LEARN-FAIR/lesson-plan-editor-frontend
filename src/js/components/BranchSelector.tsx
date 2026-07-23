@@ -240,7 +240,7 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, reposi
                         <div>
                             <Label className="mb-1.5 block">Source branch</Label>
                             <Select value={sourceBranch} onValueChange={setSourceBranch}>
-                                <SelectTrigger>
+                                <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Select a source branch" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -318,7 +318,7 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, reposi
 
             <Label className="mb-1.5 block">Branch</Label>
             <Select value={selectedBranch} onValueChange={handleBranchChange}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                     <span className="flex items-center gap-2">
                         <GitBranch className="h-4 w-4 text-muted-foreground" />
                         <SelectValue placeholder="Select a branch" />

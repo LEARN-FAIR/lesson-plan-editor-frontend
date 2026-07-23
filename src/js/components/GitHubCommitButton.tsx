@@ -408,15 +408,17 @@ const GitHubCommitButton: React.FC<GitHubCommitButtonProps> = ({
                     {isAnyLoading ? 'Loading…' : isPrMode ? 'Create pull request' : 'Commit'}
                 </Button>
                 <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button
-                            variant={mainVariant}
-                            disabled={actionsDisabled}
-                            aria-label="More actions"
-                            className="rounded-l-none border-l border-white/30 px-2"
-                        >
-                            <ChevronDown className="h-4 w-4" />
-                        </Button>
+                    <DropdownMenuTrigger
+                        render={
+                            <Button
+                                variant={mainVariant}
+                                disabled={actionsDisabled}
+                                aria-label="More actions"
+                                className="rounded-l-none border-l border-white/30 px-2"
+                            />
+                        }
+                    >
+                        <ChevronDown className="h-4 w-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={handleExport}>

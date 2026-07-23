@@ -1,26 +1,19 @@
-import * as React from 'react';
-import {Loader2} from 'lucide-react';
-import {cn} from '../../lib/utils';
+import { cn } from "@/lib/utils"
+import { Loader2Icon } from "lucide-react"
 
-export interface SpinnerProps extends React.SVGAttributes<SVGSVGElement> {
-    size?: number;
+function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
+  return (
+    <Loader2Icon data-slot="spinner" role="status" aria-label="Loading" className={cn("size-4 animate-spin", className)} {...props} />
+  )
 }
 
-/** Simple loading spinner (lucide Loader2 + Tailwind spin). */
-const Spinner: React.FC<SpinnerProps> = ({size = 24, className, ...props}) => (
-    <Loader2
-        width={size}
-        height={size}
-        className={cn('animate-spin text-primary', className)}
-        {...props}
-    />
-);
-
-/** Full-viewport centered spinner used for route/page loading states. */
-export const PageSpinner: React.FC<{size?: number}> = ({size = 40}) => (
-    <div className="flex h-screen w-full items-center justify-center">
-        <Spinner size={size} />
+/** Full-viewport centered spinner used while a route/page is loading. */
+function PageSpinner({ className }: { className?: string }) {
+  return (
+    <div className={cn("flex h-screen w-full items-center justify-center", className)}>
+      <Spinner className="size-9 text-muted-foreground" />
     </div>
-);
+  )
+}
 
-export {Spinner};
+export { Spinner, PageSpinner }

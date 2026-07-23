@@ -7,6 +7,7 @@ import {Avatar, AvatarFallback, AvatarImage} from '../ui/avatar';
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
@@ -58,7 +59,9 @@ const UserMenu: React.FC<UserMenuProps> = ({onLogout}) => {
                 </Avatar>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel className="truncate">{displayName}</DropdownMenuLabel>
+                <DropdownMenuGroup>
+                    <DropdownMenuLabel className="truncate">{displayName}</DropdownMenuLabel>
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="h-4 w-4" />

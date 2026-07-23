@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {useQueryClient} from '@tanstack/react-query';
-import {Check, ChevronRight, GitFork, Search, X} from 'lucide-react';
+import {Check, ChevronRight, Folder, GitFork, Search, X} from 'lucide-react';
 import logger from '../utils/logger';
 import type {Repository} from '../types/github';
 import type {LessonPlan} from '../types/lessonPlan';
@@ -13,7 +13,6 @@ import {Card} from './ui/card';
 import {Alert} from './ui/alert';
 import {Avatar, AvatarFallback, AvatarImage} from './ui/avatar';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from './ui/select';
-import {ToggleGroup, ToggleGroupItem} from './ui/toggle-group';
 import {Spinner} from './ui/spinner';
 import {initialsOf} from './editor/editorTypes';
 import {cn} from '../lib/utils';
@@ -55,6 +54,7 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
 
     const [lessonPlanError, setLessonPlanError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState<string>('');
+    const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
     const groupLessonPlansByCategory = (plans: LessonPlan[]): CategoryGroup[] => {
         const categorizedPlans: CategoryGroup[] = [];
@@ -107,6 +107,14 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
             setLessonPlanError((lessonPlanQueryError as Error).message);
         }
     }, [lessonPlanQueryError]);
+
+    // Open the first category by default once lesson plans load.
+    useEffect(() => {
+        if (lessonPlans.length > 0 && expandedCategory === null) {
+            const groups = groupLessonPlansByCategory(lessonPlans);
+            if (groups.length > 0) setExpandedCategory(groups[0].category);
+        }
+    }, [lessonPlans]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleNext = () => {
         if (activeStep === 0 && selectedRepo) {
@@ -197,7 +205,7 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
                                                                 if (repo) handleRepoSelected(repo);
                                                             }}
                                                         >
-                                                            <SelectTrigger className="h-auto py-2">
+                                                            <SelectTrigger className="h-auto w-full py-2">
                                                                 {selectedRepo ? (
                                                                     <span className="flex items-center gap-2">
                                                                         <Avatar className="h-6 w-6">
@@ -303,45 +311,85 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
                                                             )}
                                                         </div>
 
-                                                        <ToggleGroup
-                                                            type="single"
-                                                            variant="outline"
-                                                            value={selectedLessonPlan?.path ?? ''}
-                                                            onValueChange={(path) => {
-                                                                const plan = lessonPlans.find((p) => p.path === path);
-                                                                if (plan) handleLessonPlanSelected(plan);
-                                                            }}
-                                                            className="flex-col items-stretch gap-3"
-                                                        >
+                                                        <div className="w-full overflow-hidden rounded-md border border-border">
                                                             {groupLessonPlansByCategory(filterLessonPlans(lessonPlans)).map(
-                                                                (categoryGroup) => (
-                                                                    <div key={categoryGroup.category} className="flex flex-col gap-1">
-                                                                        <div className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                                                            {categoryGroup.category} ({categoryGroup.plans.length})
-                                                                        </div>
-                                                                        {categoryGroup.plans.map((plan) => (
-                                                                            <ToggleGroupItem
-                                                                                key={plan.path}
-                                                                                value={plan.path}
-                                                                                className="h-auto justify-start px-3 py-2 text-left"
+                                                                (categoryGroup) => {
+                                                                    const isOpen =
+                                                                        searchQuery.length > 0 ||
+                                                                        expandedCategory === categoryGroup.category;
+                                                                    return (
+                                                                        <div
+                                                                            key={categoryGroup.category}
+                                                                            className="border-b border-border last:border-b-0"
+                                                                        >
+                                                                            {/* Category folder header */}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    setExpandedCategory(
+                                                                                        isOpen && !searchQuery
+                                                                                            ? null
+                                                                                            : categoryGroup.category,
+                                                                                    )
+                                                                                }
+                                                                                className="flex w-full cursor-pointer appearance-none items-center gap-2 border-0 bg-transparent px-3 py-2.5 text-left transition-colors hover:bg-accent"
                                                                             >
-                                                                                <span className="flex flex-1 flex-col items-start">
-                                                                                    <span className="text-sm font-medium text-zinc-900">
-                                                                                        {getLessonPlanTitle(plan)}
-                                                                                    </span>
-                                                                                    <span className="text-xs font-normal text-muted-foreground">
-                                                                                        {plan.name}
-                                                                                    </span>
+                                                                                <ChevronRight
+                                                                                    className={cn(
+                                                                                        'h-4 w-4 flex-shrink-0 text-muted-foreground transition-transform',
+                                                                                        isOpen && 'rotate-90',
+                                                                                    )}
+                                                                                />
+                                                                                <Folder className="h-4 w-4 flex-shrink-0 text-teal" />
+                                                                                <span className="flex-1 text-sm font-medium text-zinc-900">
+                                                                                    {categoryGroup.category}
                                                                                 </span>
-                                                                                {selectedLessonPlan?.path === plan.path && (
-                                                                                    <Check className="h-4 w-4 flex-shrink-0 text-navy" />
-                                                                                )}
-                                                                            </ToggleGroupItem>
-                                                                        ))}
-                                                                    </div>
-                                                                ),
+                                                                                <span className="text-xs text-muted-foreground">
+                                                                                    {categoryGroup.plans.length}
+                                                                                </span>
+                                                                            </button>
+
+                                                                            {/* Lesson plans within the category */}
+                                                                            {isOpen && (
+                                                                                <div className="flex flex-col gap-1 px-2 pb-2">
+                                                                                    {categoryGroup.plans.map((plan) => {
+                                                                                        const selected =
+                                                                                            selectedLessonPlan?.path === plan.path;
+                                                                                        return (
+                                                                                            <button
+                                                                                                key={plan.path}
+                                                                                                type="button"
+                                                                                                onClick={() =>
+                                                                                                    handleLessonPlanSelected(plan)
+                                                                                                }
+                                                                                                className={cn(
+                                                                                                    'flex cursor-pointer appearance-none items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors',
+                                                                                                    selected
+                                                                                                        ? 'border-navy bg-teal-surface'
+                                                                                                        : 'border-transparent bg-transparent hover:bg-accent',
+                                                                                                )}
+                                                                                            >
+                                                                                                <span className="flex flex-1 flex-col">
+                                                                                                    <span className="text-sm font-medium text-zinc-900">
+                                                                                                        {getLessonPlanTitle(plan)}
+                                                                                                    </span>
+                                                                                                    <span className="text-xs text-muted-foreground">
+                                                                                                        {plan.name}
+                                                                                                    </span>
+                                                                                                </span>
+                                                                                                {selected && (
+                                                                                                    <Check className="h-4 w-4 flex-shrink-0 text-navy" />
+                                                                                                )}
+                                                                                            </button>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                },
                                                             )}
-                                                        </ToggleGroup>
+                                                        </div>
 
                                                         {filterLessonPlans(lessonPlans).length === 0 && (
                                                             <Alert variant="info" className="mt-2">

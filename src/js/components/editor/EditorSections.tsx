@@ -12,8 +12,17 @@ import {Input} from '../ui/input';
 import {Card} from '../ui/card';
 import {Avatar, AvatarFallback} from '../ui/avatar';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '../ui/select';
+import {useConfirm} from '../ui/confirm-dialog';
+import {arrayMove} from '@dnd-kit/sortable';
+import {DragHandle, type DragHandleProps, SortableList} from './SortableList';
 import {cn} from '../../lib/utils';
 import {initialsOf, type OpenDrawer, resolveAuthor, type SectionKey} from './editorTypes';
+
+/** Shorten a label for use inside a confirmation prompt. */
+const truncate = (text: string, max = 60): string => {
+    const clean = text.trim().replace(/\s+/g, ' ');
+    return clean.length > max ? `${clean.slice(0, max).trimEnd()}…` : clean;
+};
 
 const FAIR_ELEMENTS: ('F' | 'A' | 'I' | 'R')[] = ['F', 'A', 'I', 'R'];
 
@@ -42,7 +51,7 @@ interface EditorSectionsProps extends SectionProps {
 /* ------------------------------------------------------------------ */
 
 const FieldLabel: React.FC<{children: React.ReactNode; className?: string}> = ({children, className}) => (
-    <div className={cn('mb-1 text-xs text-muted-foreground', className)}>{children}</div>
+    <div className={cn('mb-1.5 text-sm font-medium text-muted-foreground', className)}>{children}</div>
 );
 
 const SectionCard: React.FC<{
@@ -51,10 +60,14 @@ const SectionCard: React.FC<{
     title: string;
     refEl: React.RefObject<HTMLDivElement | null>;
     children: React.ReactNode;
-}> = ({id, num, title, refEl, children}) => (
+    action?: React.ReactNode;
+}> = ({id, num, title, refEl, children, action}) => (
     <div ref={refEl} id={id} className="mb-9 scroll-mt-3">
-        <div className="mb-[18px] text-[19px] font-semibold text-navy">
-            {num}. {title}
+        <div className="mb-[18px] flex min-h-9 items-center justify-between gap-3">
+            <div className="text-[19px] font-semibold text-navy">
+                {num}. {title}
+            </div>
+            {action}
         </div>
         <Card className="p-7">{children}</Card>
     </div>
@@ -143,7 +156,9 @@ const GeneralSection: React.FC<SectionProps> = ({document, onChange}) => {
                     <FieldLabel>Status</FieldLabel>
                     <Select value={statusValue} onValueChange={(value) => onChange({status: value})}>
                         <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Select status" />
+                            <SelectValue placeholder="Select status">
+                                {(value: string) => (value ? STATUS_LABELS[value] ?? value : 'Select status')}
+                            </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                             {Object.entries(STATUS_LABELS).map(([value, label]) => (
@@ -179,14 +194,14 @@ const GeneralSection: React.FC<SectionProps> = ({document, onChange}) => {
                 </div>
             </div>
 
-            <FieldLabel className="mb-1.5">Description</FieldLabel>
+            <FieldLabel className="mb-1.5">Summary</FieldLabel>
             <div className="overflow-hidden rounded-card border border-border bg-zinc-50">
                 <MdxEditorComponent
                     markdown={document.description || ''}
                     onChange={(value) => onChange({description: value})}
                     minHeight="120px"
                     maxHeight="300px"
-                    placeholder="Enter a description for this lesson plan…"
+                    placeholder="Enter a summary for this lesson plan…"
                     showToolbar={true}
                     showDiffToggle={false}
                 />
@@ -221,7 +236,8 @@ const AuthorRow: React.FC<{
     contributors: Contributor[];
     onSave: (name: string, orcid: string) => void;
     onDelete: () => void;
-}> = ({id, contributors, onSave, onDelete}) => {
+    dragHandle?: React.ReactNode;
+}> = ({id, contributors, onSave, onDelete, dragHandle}) => {
     const resolved = resolveAuthor(id, contributors);
     const [editing, setEditing] = useState(false);
     const [name, setName] = useState(resolved.name);
@@ -270,7 +286,8 @@ const AuthorRow: React.FC<{
 
     return (
         <Card className={rowCard}>
-            <div className="flex items-center gap-3.5">
+            <div className="flex items-center gap-2.5">
+                {dragHandle}
                 <Avatar className="h-[34px] w-[34px]">
                     <AvatarFallback className="bg-teal-surface text-[13px] font-bold text-teal-ink">
                         {initialsOf(resolved.name)}
@@ -288,6 +305,7 @@ const AuthorRow: React.FC<{
 
 const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer, contributors}) => {
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
 
     const saveInline = (list: 'authors' | 'reviewers', index: number) => (name: string, orcid: string) => {
         const current = [...(document[list] || [])];
@@ -297,8 +315,15 @@ const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer,
         onChange({[list]: current});
     };
 
-    const remove = (list: 'authors' | 'reviewers', index: number) => () => {
+    const remove = (list: 'authors' | 'reviewers', index: number) => async () => {
         const current = [...(document[list] || [])];
+        const label = resolveAuthor(current[index], contributors).name;
+        const kind = list === 'reviewers' ? 'reviewer' : 'author';
+        const ok = await confirm({
+            title: `Delete ${kind}?`,
+            description: `Are you sure you want to remove “${truncate(label)}” as ${kind === 'author' ? 'an' : 'a'} ${kind}?`,
+        });
+        if (!ok) return;
         current.splice(index, 1);
         onChange({[list]: current});
     };
@@ -310,19 +335,25 @@ const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer,
                     + Add author
                 </Button>
             </SubHeader>
-            <div className="mb-[26px] flex flex-col gap-2.5">
+            <div className="mb-[26px]">
                 {(document.authors || []).length === 0 ? (
                     <EmptyState>No authors yet.</EmptyState>
                 ) : (
-                    document.authors.map((id, index) => (
-                        <AuthorRow
-                            key={`${id}-${index}`}
-                            id={id}
-                            contributors={contributors}
-                            onSave={saveInline('authors', index)}
-                            onDelete={remove('authors', index)}
-                        />
-                    ))
+                    <SortableList
+                        items={document.authors}
+                        getId={(id) => `author-${id}`}
+                        onReorder={(from, to) => onChange({authors: arrayMove(document.authors, from, to)})}
+                        className="flex flex-col gap-2.5"
+                        renderItem={(id, index, handleProps) => (
+                            <AuthorRow
+                                id={id}
+                                contributors={contributors}
+                                onSave={saveInline('authors', index)}
+                                onDelete={remove('authors', index)}
+                                dragHandle={<DragHandle {...(handleProps as DragHandleProps)} />}
+                            />
+                        )}
+                    />
                 )}
             </div>
 
@@ -331,19 +362,25 @@ const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer,
                     + Add reviewer
                 </Button>
             </SubHeader>
-            <div className="flex flex-col gap-2.5">
+            <div>
                 {(document.reviewers || []).length === 0 ? (
                     <EmptyState>No reviewers yet.</EmptyState>
                 ) : (
-                    document.reviewers.map((id, index) => (
-                        <AuthorRow
-                            key={`${id}-${index}`}
-                            id={id}
-                            contributors={contributors}
-                            onSave={saveInline('reviewers', index)}
-                            onDelete={remove('reviewers', index)}
-                        />
-                    ))
+                    <SortableList
+                        items={document.reviewers}
+                        getId={(id) => `reviewer-${id}`}
+                        onReorder={(from, to) => onChange({reviewers: arrayMove(document.reviewers, from, to)})}
+                        className="flex flex-col gap-2.5"
+                        renderItem={(id, index, handleProps) => (
+                            <AuthorRow
+                                id={id}
+                                contributors={contributors}
+                                onSave={saveInline('reviewers', index)}
+                                onDelete={remove('reviewers', index)}
+                                dragHandle={<DragHandle {...(handleProps as DragHandleProps)} />}
+                            />
+                        )}
+                    />
                 )}
             </div>
         </>
@@ -355,21 +392,25 @@ const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer,
 /* ------------------------------------------------------------------ */
 
 const OutcomesSection: React.FC<SectionProps> = ({document, onChange, openDrawer}) => {
+    const confirm = useConfirm();
     const outcomes = document.learning_outcomes || {};
     const keys = Object.keys(outcomes).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
-    const remove = (key: string) => {
+    const remove = async (key: string) => {
+        const label = outcomes[key]?.outcome;
+        const ok = await confirm({
+            title: 'Delete learning outcome?',
+            description: label
+                ? `Are you sure you want to delete “${truncate(label)}”?`
+                : `Are you sure you want to delete learning outcome ${key}?`,
+        });
+        if (!ok) return;
         const {[key]: _removed, ...rest} = outcomes;
         onChange({learning_outcomes: rest});
     };
 
     return (
         <>
-            <div className="mb-3.5 flex justify-end">
-                <Button size="sm" onClick={() => openDrawer({type: 'outcome', mode: 'add'})}>
-                    + Add outcome
-                </Button>
-            </div>
             <div className="flex flex-col gap-3">
                 {keys.length === 0 ? (
                     <EmptyState>No learning outcomes yet.</EmptyState>
@@ -420,7 +461,16 @@ const activityText = (a: Activity): string =>
     Array.isArray(a.activities) ? a.activities.join('\n') : a.activities || '';
 
 const ActivitiesSection: React.FC<SectionProps> = ({document, onChange, openDrawer}) => {
-    const removeActivity = (section: 'before' | 'during' | 'after', index: number) => {
+    const confirm = useConfirm();
+    const removeActivity = async (section: 'before' | 'during' | 'after', index: number) => {
+        const label = activityText(document.activities?.[section]?.[index] || ({} as Activity));
+        const ok = await confirm({
+            title: 'Delete activity?',
+            description: label
+                ? `Are you sure you want to delete “${truncate(label)}”?`
+                : 'Are you sure you want to delete this activity?',
+        });
+        if (!ok) return;
         const list = [...(document.activities?.[section] || [])];
         list.splice(index, 1);
         onChange({activities: {...document.activities, [section]: list}});
@@ -444,11 +494,20 @@ const ActivitiesSection: React.FC<SectionProps> = ({document, onChange, openDraw
                         {items.length === 0 ? (
                             <EmptyState>No activities yet.</EmptyState>
                         ) : (
-                            <div className="flex flex-col gap-2.5">
-                                {items.map((activity, index) => {
+                            <SortableList
+                                items={items}
+                                getId={(activity) => `${section}-${activityText(activity)}-${activity.time}-${activity.type}`}
+                                onReorder={(from, to) =>
+                                    onChange({
+                                        activities: {...document.activities, [section]: arrayMove(items, from, to)},
+                                    })
+                                }
+                                className="flex flex-col gap-2.5"
+                                renderItem={(activity, index, handleProps) => {
                                     const los = getActivityLearningOutcomes(activity);
                                     return (
-                                        <Card key={index} className={cn(rowCard, 'flex items-start gap-3.5')}>
+                                        <Card className={cn(rowCard, 'flex flex-row items-start gap-2.5')}>
+                                            <DragHandle {...(handleProps as DragHandleProps)} />
                                             <div className="mt-0.5 flex h-6 min-w-[24px] flex-shrink-0 items-center justify-center rounded-md bg-teal-surface px-1 text-[11.5px] font-bold text-teal-ink">
                                                 {los.join(', ') || '–'}
                                             </div>
@@ -472,8 +531,8 @@ const ActivitiesSection: React.FC<SectionProps> = ({document, onChange, openDraw
                                             />
                                         </Card>
                                     );
-                                })}
-                            </div>
+                                }}
+                            />
                         )}
                     </div>
                 );
@@ -487,8 +546,14 @@ const ActivitiesSection: React.FC<SectionProps> = ({document, onChange, openDraw
 /* ------------------------------------------------------------------ */
 
 const PrerequisitesSection: React.FC<SectionProps> = ({document, onChange, openDrawer}) => {
+    const confirm = useConfirm();
     const items = document.prerequisites || [];
-    const remove = (index: number) => {
+    const remove = async (index: number) => {
+        const ok = await confirm({
+            title: 'Delete prerequisite?',
+            description: `Are you sure you want to delete “${truncate(items[index])}”?`,
+        });
+        if (!ok) return;
         const list = [...items];
         list.splice(index, 1);
         onChange({prerequisites: list});
@@ -496,17 +561,17 @@ const PrerequisitesSection: React.FC<SectionProps> = ({document, onChange, openD
 
     return (
         <>
-            <div className="mb-3.5 flex justify-end">
-                <Button size="sm" onClick={() => openDrawer({type: 'prerequisite', mode: 'add'})}>
-                    + Add prerequisite
-                </Button>
-            </div>
-            <div className="flex flex-col gap-2.5">
-                {items.length === 0 ? (
-                    <EmptyState>No prerequisites yet.</EmptyState>
-                ) : (
-                    items.map((prerequisite, index) => (
-                        <Card key={index} className={cn(rowCard, 'flex items-center gap-3 py-3')}>
+            {items.length === 0 ? (
+                <EmptyState>No prerequisites yet.</EmptyState>
+            ) : (
+                <SortableList
+                    items={items}
+                    getId={(item) => `prerequisite-${item}`}
+                    onReorder={(from, to) => onChange({prerequisites: arrayMove(items, from, to)})}
+                    className="flex flex-col gap-2.5"
+                    renderItem={(prerequisite, index, handleProps) => (
+                        <Card className={cn(rowCard, 'flex flex-row items-center gap-2.5 py-3')}>
+                            <DragHandle {...(handleProps as DragHandleProps)} />
                             <Check className="h-[18px] w-[18px] flex-shrink-0 text-teal" />
                             <div className="flex-1 text-sm text-zinc-900">{prerequisite}</div>
                             <RowActions
@@ -514,9 +579,9 @@ const PrerequisitesSection: React.FC<SectionProps> = ({document, onChange, openD
                                 onDelete={() => remove(index)}
                             />
                         </Card>
-                    ))
-                )}
-            </div>
+                    )}
+                />
+            )}
         </>
     );
 };
@@ -529,8 +594,14 @@ const resourceMeta = (r: {author?: string; url?: string; doi?: string}): string 
     [r.author, r.doi ? `DOI: ${r.doi}` : r.url].filter(Boolean).join(' · ');
 
 const ResourcesSection: React.FC<SectionProps> = ({document, onChange, openDrawer}) => {
+    const confirm = useConfirm();
     const items = document.additionalResources || [];
-    const remove = (index: number) => {
+    const remove = async (index: number) => {
+        const ok = await confirm({
+            title: 'Delete resource?',
+            description: `Are you sure you want to delete “${truncate(items[index].title)}”?`,
+        });
+        if (!ok) return;
         const list = [...items];
         list.splice(index, 1);
         onChange({additionalResources: list});
@@ -538,17 +609,17 @@ const ResourcesSection: React.FC<SectionProps> = ({document, onChange, openDrawe
 
     return (
         <>
-            <div className="mb-3.5 flex justify-end">
-                <Button size="sm" onClick={() => openDrawer({type: 'resource', mode: 'add'})}>
-                    + Add resource
-                </Button>
-            </div>
-            <div className="flex flex-col gap-2.5">
-                {items.length === 0 ? (
-                    <EmptyState>No resources yet.</EmptyState>
-                ) : (
-                    items.map((resource, index) => (
-                        <Card key={index} className={cn(rowCard, 'flex items-center gap-3.5')}>
+            {items.length === 0 ? (
+                <EmptyState>No resources yet.</EmptyState>
+            ) : (
+                <SortableList
+                    items={items}
+                    getId={(item) => `resource-${item.title}-${item.url ?? item.doi ?? ''}`}
+                    onReorder={(from, to) => onChange({additionalResources: arrayMove(items, from, to)})}
+                    className="flex flex-col gap-2.5"
+                    renderItem={(resource, index, handleProps) => (
+                        <Card className={cn(rowCard, 'flex flex-row items-center gap-2.5')}>
+                            <DragHandle {...(handleProps as DragHandleProps)} />
                             <div className="min-w-0 flex-1">
                                 <div className="text-[14.5px] font-semibold text-zinc-900">{resource.title}</div>
                                 {resourceMeta(resource) && (
@@ -562,9 +633,9 @@ const ResourcesSection: React.FC<SectionProps> = ({document, onChange, openDrawe
                                 onDelete={() => remove(index)}
                             />
                         </Card>
-                    ))
-                )}
-            </div>
+                    )}
+                />
+            )}
         </>
     );
 };
@@ -604,16 +675,46 @@ const EditorSections: React.FC<EditorSectionsProps> = (props) => {
             <SectionCard id="sec-authors" num={2} title="Authors & reviewers" refEl={sectionRefs.authors}>
                 <AuthorsSection {...props} />
             </SectionCard>
-            <SectionCard id="sec-outcomes" num={3} title="Learning outcomes" refEl={sectionRefs.outcomes}>
+            <SectionCard
+                id="sec-outcomes"
+                num={3}
+                title="Learning outcomes"
+                refEl={sectionRefs.outcomes}
+                action={
+                    <Button size="sm" onClick={() => props.openDrawer({type: 'outcome', mode: 'add'})}>
+                        + Add outcome
+                    </Button>
+                }
+            >
                 <OutcomesSection {...props} />
             </SectionCard>
             <SectionCard id="sec-activities" num={4} title="Activities" refEl={sectionRefs.activities}>
                 <ActivitiesSection {...props} />
             </SectionCard>
-            <SectionCard id="sec-prerequisites" num={5} title="Prerequisites" refEl={sectionRefs.prerequisites}>
+            <SectionCard
+                id="sec-prerequisites"
+                num={5}
+                title="Prerequisites"
+                refEl={sectionRefs.prerequisites}
+                action={
+                    <Button size="sm" onClick={() => props.openDrawer({type: 'prerequisite', mode: 'add'})}>
+                        + Add prerequisite
+                    </Button>
+                }
+            >
                 <PrerequisitesSection {...props} />
             </SectionCard>
-            <SectionCard id="sec-resources" num={6} title="Additional resources" refEl={sectionRefs.resources}>
+            <SectionCard
+                id="sec-resources"
+                num={6}
+                title="Additional resources"
+                refEl={sectionRefs.resources}
+                action={
+                    <Button size="sm" onClick={() => props.openDrawer({type: 'resource', mode: 'add'})}>
+                        + Add resource
+                    </Button>
+                }
+            >
                 <ResourcesSection {...props} />
             </SectionCard>
             <SectionCard id="sec-content" num={7} title="Content" refEl={sectionRefs.content}>

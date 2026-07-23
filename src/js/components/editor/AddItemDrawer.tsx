@@ -3,13 +3,21 @@ import {useQueryClient} from '@tanstack/react-query';
 import type {Activity, FairMarkdownDocument, LearningOutcome, Resource} from '../../types';
 import type {Contributor} from '../../services/contributorService';
 import customContributorService from '../../services/customContributorService';
+import {ChevronDown} from 'lucide-react';
 import {getActivityLearningOutcomes} from '../../utils/activityUtils';
+import MdxEditorComponent from '../common/MdxEditorComponent';
 import {Sheet, SheetContent, SheetTitle} from '../ui/sheet';
 import {Button} from '../ui/button';
 import {Input} from '../ui/input';
 import {Textarea} from '../ui/textarea';
 import {Label} from '../ui/label';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '../ui/select';
+import {
+    DropdownMenu,
+    DropdownMenuCheckboxItem,
+    DropdownMenuContent,
+    DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import {cn} from '../../lib/utils';
 import type {DrawerRequest} from './editorTypes';
 
@@ -262,7 +270,7 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                         </FieldGroup>
                     )}
                     <FieldGroup label="Name">
-                        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" autoFocus />
+                        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
                     </FieldGroup>
                     <FieldGroup label="ORCID (optional)">
                         <Input value={orcid} onChange={(e) => setOrcid(e.target.value)} placeholder="0000-0000-0000-0000" />
@@ -273,13 +281,17 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
             {request.type === 'outcome' && (
                 <>
                     <FieldGroup label="Outcome">
-                        <Textarea
-                            value={outcomeText}
-                            onChange={(e) => setOutcomeText(e.target.value)}
-                            placeholder="Learners will be able to…"
-                            className="h-[76px]"
-                            autoFocus
-                        />
+                        <div className="overflow-hidden rounded-md border border-input bg-zinc-50">
+                            <MdxEditorComponent
+                                markdown={outcomeText}
+                                onChange={setOutcomeText}
+                                minHeight="90px"
+                                maxHeight="240px"
+                                placeholder="Learners will be able to…"
+                                showToolbar={true}
+                                showDiffToggle={false}
+                            />
+                        </div>
                     </FieldGroup>
                     <div className="mb-2 flex flex-col gap-2">
                         <Input value={verbs.beginner} onChange={(e) => setVerbs({...verbs, beginner: e.target.value})} placeholder="Beginner verb" className="text-[13.5px]" />
@@ -295,25 +307,55 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                         {outcomeKeys.length === 0 ? (
                             <div className="text-[13px] italic text-zinc-400">Add a learning outcome first.</div>
                         ) : (
-                            <div className="flex flex-wrap gap-2">
-                                {outcomeKeys.map((key) => {
-                                    const active = activityLos.includes(key);
-                                    return (
-                                        <button
-                                            key={key}
-                                            type="button"
-                                            onClick={() => toggleLo(key)}
-                                            title={document.learning_outcomes[key]?.outcome}
-                                            className={cn(
-                                                'flex h-7 min-w-[28px] cursor-pointer appearance-none items-center justify-center rounded-md border-0 px-2 text-xs font-semibold transition-colors',
-                                                active ? 'bg-navy text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200',
-                                            )}
-                                        >
-                                            {key}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            <>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger
+                                        render={
+                                            <Button
+                                                variant="outline"
+                                                className="w-full justify-between font-normal"
+                                            />
+                                        }
+                                    >
+                                        <span className="truncate text-muted-foreground data-[has-value=true]:text-foreground" data-has-value={activityLos.length > 0}>
+                                            {activityLos.length > 0
+                                                ? `Outcome${activityLos.length > 1 ? 's' : ''} ${activityLos.join(', ')}`
+                                                : 'Select learning outcomes'}
+                                        </span>
+                                        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="start" className="max-h-72 w-[var(--anchor-width)] min-w-72 overflow-y-auto">
+                                        {outcomeKeys.map((key) => (
+                                            <DropdownMenuCheckboxItem
+                                                key={key}
+                                                checked={activityLos.includes(key)}
+                                                onCheckedChange={() => toggleLo(key)}
+                                                closeOnClick={false}
+                                                className="items-start whitespace-normal text-sm"
+                                            >
+                                                <span className="mr-1 font-semibold text-navy">{key}.</span>
+                                                <span>{document.learning_outcomes[key]?.outcome}</span>
+                                            </DropdownMenuCheckboxItem>
+                                        ))}
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+
+                                {activityLos.length > 0 && (
+                                    <div className="mt-2 flex flex-col gap-1">
+                                        {activityLos
+                                            .slice()
+                                            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+                                            .map((key) => (
+                                                <div key={key} className="flex gap-1.5 text-xs text-muted-foreground">
+                                                    <span className="font-semibold text-navy">{key}.</span>
+                                                    <span className="line-clamp-1">
+                                                        {document.learning_outcomes[key]?.outcome}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                    </div>
+                                )}
+                            </>
                         )}
                     </FieldGroup>
                     <div className="mb-3 flex gap-2.5">
@@ -355,7 +397,6 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                         value={prereq}
                         onChange={(e) => setPrereq(e.target.value)}
                         placeholder="e.g. Familiarity with spreadsheets"
-                        autoFocus
                     />
                 </FieldGroup>
             )}
@@ -363,7 +404,7 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
             {request.type === 'resource' && (
                 <>
                     <FieldGroup label="Title">
-                        <Input value={resTitle} onChange={(e) => setResTitle(e.target.value)} placeholder="Resource title" autoFocus />
+                        <Input value={resTitle} onChange={(e) => setResTitle(e.target.value)} placeholder="Resource title" />
                     </FieldGroup>
                     <FieldGroup label="Author (optional)">
                         <Input value={resAuthor} onChange={(e) => setResAuthor(e.target.value)} placeholder="Author or publisher" />
@@ -398,17 +439,19 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
 /* ------------------------------------------------------------------ */
 
 const AddItemDrawer: React.FC<AddItemDrawerProps> = (props) => {
-    const {request, onClose, container} = props;
+    const {request, onClose} = props;
     return (
         <Sheet open={!!request} onOpenChange={(open) => !open && onClose()}>
             {request && (
                 <SheetContent
-                    container={container}
+                    side="right"
+                    className="w-full sm:max-w-md"
                     // Remount the form whenever the target changes so local state resets.
                     key={`${request.type}-${request.mode}-${request.section ?? ''}-${request.index ?? ''}-${request.outcomeKey ?? ''}`}
-                    aria-describedby={undefined}
                 >
-                    <DrawerBody {...props} request={request} />
+                    <div className="flex h-full flex-col overflow-y-auto p-6">
+                        <DrawerBody {...props} request={request} />
+                    </div>
                 </SheetContent>
             )}
         </Sheet>
