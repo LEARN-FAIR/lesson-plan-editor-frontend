@@ -213,7 +213,7 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, reposi
             <>
                 {/* Create branch dialog */}
                 <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-                    <DialogContent>
+                    <DialogContent className="max-w-md">
                         <DialogHeader>
                             <DialogTitle>Create new branch</DialogTitle>
                             <DialogDescription>
@@ -224,7 +224,7 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, reposi
 
                         {createError && <Alert variant="error">{createError}</Alert>}
 
-                        <div>
+                        <div className="min-w-0">
                             <Label htmlFor="new-branch-name" className="mb-1.5 block">
                                 New branch name
                             </Label>
@@ -237,10 +237,10 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, reposi
                             />
                         </div>
 
-                        <div>
+                        <div className="min-w-0">
                             <Label className="mb-1.5 block">Source branch</Label>
                             <Select value={sourceBranch} onValueChange={setSourceBranch}>
-                                <SelectTrigger className="w-full">
+                                <SelectTrigger className="w-full min-w-0">
                                     <SelectValue placeholder="Select a source branch" />
                                 </SelectTrigger>
                                 <SelectContent>
