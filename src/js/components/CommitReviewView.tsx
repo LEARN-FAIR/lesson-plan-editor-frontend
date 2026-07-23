@@ -25,6 +25,8 @@ interface CommitReviewViewProps {
     repository?: Repository;
     branch?: string;
     document?: FairMarkdownDocument;
+    /** Called after a successful commit (so the editor can reset its unsaved baseline). */
+    onCommitted?: () => void;
     /** Close the commit view and return to the editor. */
     onClose: () => void;
 }
@@ -47,6 +49,7 @@ const CommitReviewView: React.FC<CommitReviewViewProps> = ({
     repository,
     branch,
     document,
+    onCommitted,
     onClose,
 }) => {
     const queryClient = useQueryClient();
@@ -145,6 +148,7 @@ const CommitReviewView: React.FC<CommitReviewViewProps> = ({
             };
             await githubService.commitFile(params);
             setSuccess(true);
+            onCommitted?.();
 
             queryClient.invalidateQueries({queryKey: ['fileContent']});
             queryClient.invalidateQueries({queryKey: ['hasCommitsOnBranch']});

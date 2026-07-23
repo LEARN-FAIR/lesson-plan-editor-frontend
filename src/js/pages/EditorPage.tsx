@@ -13,12 +13,23 @@ import CommitReviewView from '../components/CommitReviewView';
 import SinglePageEditor from '../components/editor/SinglePageEditor';
 import {Button} from '../components/ui/button';
 import {PageSpinner} from '../components/ui/spinner';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '../components/ui/dialog';
 
 const EditorPage: React.FC = () => {
     const navigate = useNavigate();
     const [document, setDocument] = useState<FairMarkdownDocument>();
     const [markdownContent, setMarkdownContent] = useState<string>('');
     const [commitOpen, setCommitOpen] = useState<boolean>(false);
+    // The serialized content as first loaded / last committed — used to detect edits.
+    const [baselineContent, setBaselineContent] = useState<string | null>(null);
+    const [leaveOpen, setLeaveOpen] = useState<boolean>(false);
 
     const params = useParams<{owner: string; repo: string; branch: string; category: string; lesson: string}>();
     const {owner, repo, branch, category, lesson} = params;
@@ -42,12 +53,43 @@ const EditorPage: React.FC = () => {
             // Seed the serialized content so the Commit button + diff are available
             // immediately (not only after the first edit).
             try {
-                setMarkdownContent(serializeMarkdown(parsed));
+                const serialized = serializeMarkdown(parsed);
+                setMarkdownContent(serialized);
+                setBaselineContent((prev) => prev ?? serialized);
             } catch (error) {
                 logger.error('Error serializing markdown:', error);
             }
         }
     }, [fileContent]);
+
+    const normalize = (s: string) => s.replace(/\r\n/g, '\n').trim();
+    const hasUnsavedChanges =
+        baselineContent !== null && normalize(markdownContent) !== normalize(baselineContent);
+
+    // Warn on browser-level navigation (refresh, tab close, external link).
+    useEffect(() => {
+        if (!hasUnsavedChanges) return;
+        const handler = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [hasUnsavedChanges]);
+
+    // Guard the browser Back button. BrowserRouter has no useBlocker, so we push
+    // a sentinel history entry and intercept the resulting popstate: re-arm the
+    // sentinel to stay put and prompt. Confirming "Leave" navigates to the list.
+    useEffect(() => {
+        if (!hasUnsavedChanges) return;
+        window.history.pushState(null, '', window.location.href);
+        const onPopState = () => {
+            window.history.pushState(null, '', window.location.href);
+            setLeaveOpen(true);
+        };
+        window.addEventListener('popstate', onPopState);
+        return () => window.removeEventListener('popstate', onPopState);
+    }, [hasUnsavedChanges]);
 
     if (isLoadingFileContent || fileContent === undefined || document === undefined) {
         return <PageSpinner />;
@@ -71,6 +113,15 @@ const EditorPage: React.FC = () => {
         }
     };
 
+    // In-app navigation back to the lesson list — guard when there are edits.
+    const requestLeave = () => {
+        if (hasUnsavedChanges) {
+            setLeaveOpen(true);
+        } else {
+            navigate('/');
+        }
+    };
+
     return (
         <div className="flex h-screen flex-col font-sans">
             {/* Header bar */}
@@ -84,7 +135,7 @@ const EditorPage: React.FC = () => {
                         <GitBranch className="h-3.5 w-3.5 shrink-0" />
                         <button
                             type="button"
-                            onClick={() => navigate('/')}
+                            onClick={requestLeave}
                             className="max-w-full cursor-pointer appearance-none truncate border-0 bg-transparent p-0 text-white/65 transition-colors hover:text-white"
                             title="Back to lesson selection"
                         >
@@ -137,6 +188,7 @@ const EditorPage: React.FC = () => {
                     repository={repository}
                     branch={branch}
                     document={document}
+                    onCommitted={() => setBaselineContent(markdownContent)}
                     onClose={() => setCommitOpen(false)}
                 />
             ) : (
@@ -148,6 +200,33 @@ const EditorPage: React.FC = () => {
                     branch={branch}
                 />
             )}
+
+            {/* Unsaved-changes guard for in-app navigation */}
+            <Dialog open={leaveOpen} onOpenChange={setLeaveOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Leave without committing?</DialogTitle>
+                        <DialogDescription>
+                            You have uncommitted changes that will be lost if you leave this lesson plan. Commit them
+                            first to keep your work.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="secondary" onClick={() => setLeaveOpen(false)}>
+                            Stay
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => {
+                                setLeaveOpen(false);
+                                navigate('/');
+                            }}
+                        >
+                            Leave without committing
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
