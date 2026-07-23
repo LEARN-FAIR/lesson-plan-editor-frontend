@@ -281,17 +281,12 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
             {request.type === 'outcome' && (
                 <>
                     <FieldGroup label="Outcome">
-                        <div className="overflow-hidden rounded-md border border-input bg-zinc-50">
-                            <MdxEditorComponent
-                                markdown={outcomeText}
-                                onChange={setOutcomeText}
-                                minHeight="90px"
-                                maxHeight="240px"
-                                placeholder="Learners will be able to…"
-                                showToolbar={true}
-                                showDiffToggle={false}
-                            />
-                        </div>
+                        <Textarea
+                            value={outcomeText}
+                            onChange={(e) => setOutcomeText(e.target.value)}
+                            placeholder="Learners will be able to…"
+                            className="h-[76px]"
+                        />
                     </FieldGroup>
                     <div className="mb-2 flex flex-col gap-2">
                         <Input value={verbs.beginner} onChange={(e) => setVerbs({...verbs, beginner: e.target.value})} placeholder="Beginner verb" className="text-[13.5px]" />
@@ -381,12 +376,17 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                         </Select>
                     </FieldGroup>
                     <FieldGroup label="Description">
-                        <Textarea
-                            value={activityText}
-                            onChange={(e) => setActivityText(e.target.value)}
-                            placeholder="Describe the activity…"
-                            className="h-[84px]"
-                        />
+                        <div className="overflow-hidden rounded-md border border-input bg-zinc-50">
+                            <MdxEditorComponent
+                                markdown={activityText}
+                                onChange={setActivityText}
+                                minHeight="90px"
+                                maxHeight="240px"
+                                placeholder="Describe the activity…"
+                                showToolbar={true}
+                                showDiffToggle={false}
+                            />
+                        </div>
                     </FieldGroup>
                 </>
             )}

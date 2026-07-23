@@ -1,5 +1,17 @@
 import React, {useEffect, useState} from 'react';
-import {Check, Pencil, X} from 'lucide-react';
+import {
+    BookOpen,
+    Calendar,
+    Check,
+    ClipboardCheck,
+    FileText,
+    Info,
+    type LucideIcon,
+    Pencil,
+    Target,
+    Users,
+    X,
+} from 'lucide-react';
 import {useQueryClient} from '@tanstack/react-query';
 import type {Activity, FairMarkdownDocument, LearningVerbLevel} from '../../types';
 import type {Contributor} from '../../services/contributorService';
@@ -9,6 +21,7 @@ import MdxEditorComponent from '../common/MdxEditorComponent';
 import {Button} from '../ui/button';
 import {Badge} from '../ui/badge';
 import {Input} from '../ui/input';
+import {Textarea} from '../ui/textarea';
 import {Card} from '../ui/card';
 import {Avatar, AvatarFallback} from '../ui/avatar';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '../ui/select';
@@ -58,14 +71,16 @@ const SectionCard: React.FC<{
     id: string;
     num: number;
     title: string;
+    icon: LucideIcon;
     refEl: React.RefObject<HTMLDivElement | null>;
     children: React.ReactNode;
     action?: React.ReactNode;
-}> = ({id, num, title, refEl, children, action}) => (
+}> = ({id, title, icon: Icon, refEl, children, action}) => (
     <div ref={refEl} id={id} className="mb-9 scroll-mt-3">
         <div className="mb-[18px] flex min-h-9 items-center justify-between gap-3">
-            <div className="text-[19px] font-semibold text-navy">
-                {num}. {title}
+            <div className="flex items-center gap-2 text-[19px] font-semibold text-navy">
+                <Icon className="h-5 w-5" />
+                <span>{title}</span>
             </div>
             {action}
         </div>
@@ -195,17 +210,12 @@ const GeneralSection: React.FC<SectionProps> = ({document, onChange}) => {
             </div>
 
             <FieldLabel className="mb-1.5">Summary</FieldLabel>
-            <div className="overflow-hidden rounded-card border border-border bg-zinc-50">
-                <MdxEditorComponent
-                    markdown={document.description || ''}
-                    onChange={(value) => onChange({description: value})}
-                    minHeight="120px"
-                    maxHeight="300px"
-                    placeholder="Enter a summary for this lesson plan…"
-                    showToolbar={true}
-                    showDiffToggle={false}
-                />
-            </div>
+            <Textarea
+                value={document.description || ''}
+                onChange={(e) => onChange({description: e.target.value})}
+                placeholder="Enter a summary for this lesson plan…"
+                className="min-h-28"
+            />
         </>
     );
 };
@@ -669,16 +679,17 @@ const EditorSections: React.FC<EditorSectionsProps> = (props) => {
     const {sectionRefs} = props;
     return (
         <>
-            <SectionCard id="sec-general" num={1} title="General information" refEl={sectionRefs.general}>
+            <SectionCard id="sec-general" num={1} title="General information" icon={Info} refEl={sectionRefs.general}>
                 <GeneralSection {...props} />
             </SectionCard>
-            <SectionCard id="sec-authors" num={2} title="Authors & reviewers" refEl={sectionRefs.authors}>
+            <SectionCard id="sec-authors" num={2} title="Authors & reviewers" icon={Users} refEl={sectionRefs.authors}>
                 <AuthorsSection {...props} />
             </SectionCard>
             <SectionCard
                 id="sec-outcomes"
                 num={3}
                 title="Learning outcomes"
+                icon={Target}
                 refEl={sectionRefs.outcomes}
                 action={
                     <Button size="sm" onClick={() => props.openDrawer({type: 'outcome', mode: 'add'})}>
@@ -688,13 +699,14 @@ const EditorSections: React.FC<EditorSectionsProps> = (props) => {
             >
                 <OutcomesSection {...props} />
             </SectionCard>
-            <SectionCard id="sec-activities" num={4} title="Activities" refEl={sectionRefs.activities}>
+            <SectionCard id="sec-activities" num={4} title="Activities" icon={Calendar} refEl={sectionRefs.activities}>
                 <ActivitiesSection {...props} />
             </SectionCard>
             <SectionCard
                 id="sec-prerequisites"
                 num={5}
                 title="Prerequisites"
+                icon={ClipboardCheck}
                 refEl={sectionRefs.prerequisites}
                 action={
                     <Button size="sm" onClick={() => props.openDrawer({type: 'prerequisite', mode: 'add'})}>
@@ -708,6 +720,7 @@ const EditorSections: React.FC<EditorSectionsProps> = (props) => {
                 id="sec-resources"
                 num={6}
                 title="Additional resources"
+                icon={BookOpen}
                 refEl={sectionRefs.resources}
                 action={
                     <Button size="sm" onClick={() => props.openDrawer({type: 'resource', mode: 'add'})}>
@@ -717,7 +730,7 @@ const EditorSections: React.FC<EditorSectionsProps> = (props) => {
             >
                 <ResourcesSection {...props} />
             </SectionCard>
-            <SectionCard id="sec-content" num={7} title="Content" refEl={sectionRefs.content}>
+            <SectionCard id="sec-content" num={7} title="Content" icon={FileText} refEl={sectionRefs.content}>
                 <ContentSection {...props} />
             </SectionCard>
         </>

@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
+import {Download, GitBranch, GitCommitHorizontal, X} from 'lucide-react';
 import {useRepositories} from '../services/githubRepoQueryHooks';
 import {useFileContent} from '../services/githubQueryHooks';
 import {exportMarkdownFile, getCurrentFilename} from '../services/markdownService';
@@ -8,7 +9,7 @@ import {constructLessonPath} from '../utils/urlUtils';
 import logger from '../utils/logger';
 import type {FairMarkdownDocument} from '../types';
 import UserMenu from '../components/navigation/UserMenu';
-import GitHubCommitButton from '../components/GitHubCommitButton';
+import CommitReviewView from '../components/CommitReviewView';
 import SinglePageEditor from '../components/editor/SinglePageEditor';
 import {Button} from '../components/ui/button';
 import {PageSpinner} from '../components/ui/spinner';
@@ -17,6 +18,7 @@ const EditorPage: React.FC = () => {
     const navigate = useNavigate();
     const [document, setDocument] = useState<FairMarkdownDocument>();
     const [markdownContent, setMarkdownContent] = useState<string>('');
+    const [commitOpen, setCommitOpen] = useState<boolean>(false);
 
     const params = useParams<{owner: string; repo: string; branch: string; category: string; lesson: string}>();
     const {owner, repo, branch, category, lesson} = params;
@@ -65,7 +67,7 @@ const EditorPage: React.FC = () => {
 
     const handleExportMarkdown = () => {
         if (markdownContent) {
-            exportMarkdownFile(markdownContent);
+            exportMarkdownFile(markdownContent, getCurrentFilename(fullLessonPath) || lesson);
         }
     };
 
@@ -79,6 +81,7 @@ const EditorPage: React.FC = () => {
                 <div className="min-w-0">
                     <div className="text-lg font-semibold text-white">Lesson Plan Editor</div>
                     <div className="mt-1 flex items-center gap-2.5 text-xs text-white/65">
+                        <GitBranch className="h-3.5 w-3.5 shrink-0" />
                         <button
                             type="button"
                             onClick={() => navigate('/')}
@@ -103,30 +106,48 @@ const EditorPage: React.FC = () => {
                         onClick={handleExportMarkdown}
                         className="h-9 border border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                     >
+                        <Download className="h-4 w-4" />
                         Export
                     </Button>
-                    {markdownContent && (
-                        <GitHubCommitButton
-                            content={markdownContent}
-                            originalGithubContent={originalGithubContent}
-                            filePath={getCurrentFilename(fullLessonPath)}
-                            repository={repository}
-                            branch={branch}
-                            document={document}
-                            onExport={handleExportMarkdown}
-                        />
-                    )}
+                    {markdownContent &&
+                        (commitOpen ? (
+                            <Button
+                                variant="ghost"
+                                onClick={() => setCommitOpen(false)}
+                                className="h-9 border border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+                            >
+                                <X className="h-4 w-4" />
+                                Hide changes
+                            </Button>
+                        ) : (
+                            <Button variant="teal" className="h-9" onClick={() => setCommitOpen(true)}>
+                                <GitCommitHorizontal className="h-4 w-4" />
+                                Commit
+                            </Button>
+                        ))}
                     <UserMenu />
                 </div>
             </header>
 
-            <SinglePageEditor
-                document={document}
-                onDocumentChange={handleDocumentChange}
-                owner={owner}
-                repo={repo}
-                branch={branch}
-            />
+            {commitOpen ? (
+                <CommitReviewView
+                    content={markdownContent}
+                    originalGithubContent={originalGithubContent}
+                    filePath={getCurrentFilename(fullLessonPath)}
+                    repository={repository}
+                    branch={branch}
+                    document={document}
+                    onClose={() => setCommitOpen(false)}
+                />
+            ) : (
+                <SinglePageEditor
+                    document={document}
+                    onDocumentChange={handleDocumentChange}
+                    owner={owner}
+                    repo={repo}
+                    branch={branch}
+                />
+            )}
         </div>
     );
 };

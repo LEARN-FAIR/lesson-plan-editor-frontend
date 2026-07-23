@@ -104,9 +104,8 @@ const SinglePageEditor: React.FC<SinglePageEditorProps> = ({
                                         : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200',
                                 )}
                             >
-                                <span>
-                                    {s.num}. {s.label}
-                                </span>
+                                <s.icon className="h-3.5 w-3.5" />
+                                <span>{s.label}</span>
                                 {completion[s.key] && (
                                     <Check
                                         className={cn('h-3.5 w-3.5', isActive ? 'text-white' : 'text-teal')}

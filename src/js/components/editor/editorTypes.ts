@@ -1,3 +1,5 @@
+import type {LucideIcon} from 'lucide-react';
+import {BookOpen, Calendar, ClipboardCheck, FileText, Info, Target, Users} from 'lucide-react';
 import type {Contributor} from '../../services/contributorService';
 
 /** The seven jump-nav sections of the single-page editor. */
@@ -14,16 +16,18 @@ export interface SectionMeta {
     key: SectionKey;
     label: string;
     num: number;
+    /** Lucide icon for the jump pill and the section title (per design handoff). */
+    icon: LucideIcon;
 }
 
 export const SECTIONS_META: SectionMeta[] = [
-    {key: 'general', label: 'General info', num: 1},
-    {key: 'authors', label: 'Authors', num: 2},
-    {key: 'outcomes', label: 'Outcomes', num: 3},
-    {key: 'activities', label: 'Activities', num: 4},
-    {key: 'prerequisites', label: 'Prerequisites', num: 5},
-    {key: 'resources', label: 'Resources', num: 6},
-    {key: 'content', label: 'Content', num: 7},
+    {key: 'general', label: 'General info', num: 1, icon: Info},
+    {key: 'authors', label: 'Authors', num: 2, icon: Users},
+    {key: 'outcomes', label: 'Outcomes', num: 3, icon: Target},
+    {key: 'activities', label: 'Activities', num: 4, icon: Calendar},
+    {key: 'prerequisites', label: 'Prerequisites', num: 5, icon: ClipboardCheck},
+    {key: 'resources', label: 'Resources', num: 6, icon: BookOpen},
+    {key: 'content', label: 'Content', num: 7, icon: FileText},
 ];
 
 /**
