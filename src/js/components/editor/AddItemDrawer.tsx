@@ -3,7 +3,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import type {Activity, FairMarkdownDocument, LearningOutcome, Resource} from '../../types';
 import type {Contributor} from '../../services/contributorService';
 import customContributorService from '../../services/customContributorService';
-import {ChevronDown} from 'lucide-react';
+import {Check, ChevronDown, Plus, Search} from 'lucide-react';
 import {getActivityLearningOutcomes} from '../../utils/activityUtils';
 import MdxEditorComponent from '../common/MdxEditorComponent';
 import {Sheet, SheetContent, SheetTitle} from '../ui/sheet';
@@ -11,6 +11,8 @@ import {Button} from '../ui/button';
 import {Input} from '../ui/input';
 import {Textarea} from '../ui/textarea';
 import {Label} from '../ui/label';
+import {Alert} from '../ui/alert';
+import {Avatar, AvatarFallback} from '../ui/avatar';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '../ui/select';
 import {
     DropdownMenu,
@@ -19,7 +21,7 @@ import {
     DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import {cn} from '../../lib/utils';
-import type {DrawerRequest} from './editorTypes';
+import {initialsOf, type DrawerRequest} from './editorTypes';
 
 const DRAWER_TITLES: Record<DrawerRequest['type'], string> = {
     author: 'author',
@@ -51,14 +53,30 @@ const FieldGroup: React.FC<{label: string; children: React.ReactNode; className?
     </div>
 );
 
-const upsertAuthorId = (name: string, orcid: string): string => {
-    const trimmed = name.trim();
-    const parts = trimmed.split(/\s+/);
-    const firstName = parts[0] || trimmed;
-    const lastName = parts.slice(1).join(' ');
-    const cleanOrcid = orcid.trim();
-    const id = cleanOrcid || customContributorService.generateId(firstName, lastName);
-    customContributorService.addCustomContributor({id, orcid: cleanOrcid || undefined, firstName, lastName});
+// Format free text into the ORCID shape `0000-0000-0000-0000` as the user types.
+// Digits go anywhere; an 'X' checksum is only allowed as the 16th character.
+const formatOrcid = (raw: string): string => {
+    let out = '';
+    for (const ch of raw.toUpperCase()) {
+        if (out.length >= 16) break;
+        if (/[0-9]/.test(ch)) out += ch;
+        else if (ch === 'X' && out.length === 15) out += 'X';
+    }
+    return (out.match(/.{1,4}/g) || []).join('-');
+};
+
+const isCompleteOrcid = (v: string): boolean => /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(v);
+
+// Persist a new contributor. The id is the ORCID (required); `git` is optional.
+const upsertContributor = (firstName: string, lastName: string, orcid: string, git: string): string => {
+    const id = orcid.trim();
+    customContributorService.addCustomContributor({
+        id,
+        orcid: id,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        git: git.trim() || undefined,
+    });
     return id;
 };
 
@@ -77,10 +95,14 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
     const isAuthorLike = request.type === 'author' || request.type === 'reviewer';
     const listKey: 'authors' | 'reviewers' = request.type === 'reviewer' ? 'reviewers' : 'authors';
 
-    /* ---- author / reviewer state ---- */
-    const [selectedId, setSelectedId] = useState('');
-    const [name, setName] = useState('');
-    const [orcid, setOrcid] = useState('');
+    /* ---- author / reviewer state (search-then-add) ---- */
+    const [authorQuery, setAuthorQuery] = useState('');
+    const [pickedId, setPickedId] = useState<string | null>(null);
+    const [addNewForced, setAddNewForced] = useState(false);
+    const [newFirstName, setNewFirstName] = useState('');
+    const [newLastName, setNewLastName] = useState('');
+    const [newOrcid, setNewOrcid] = useState('');
+    const [newGit, setNewGit] = useState('');
 
     /* ---- outcome state ---- */
     const editingOutcome =
@@ -144,21 +166,47 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
     const toggleLo = (key: string) =>
         setActivityLos((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
 
-    const pickContributor = (id: string) => {
-        const c = contributors.find((x) => x.id === id);
-        setSelectedId(id);
-        if (c) {
-            setName(`${c.firstName} ${c.lastName}`.trim());
-            setOrcid(c.orcid || (c.id.startsWith('0000-') ? c.id : ''));
-        }
-    };
+    /* ---- author / reviewer derived state ---- */
+    const contributorName = (c: Contributor) => `${c.firstName} ${c.lastName}`.trim();
+    const contributorOrcid = (c: Contributor) => c.orcid || (c.id.startsWith('0000-') ? c.id : '');
+    // Contributors already in this list can't be added again.
+    const alreadyAdded = useMemo(() => new Set(document[listKey] || []), [document, listKey]);
+    const selectableContributors = useMemo(
+        () =>
+            contributors
+                .filter((c) => !alreadyAdded.has(c.id))
+                // Sort by last name, then first name.
+                .sort(
+                    (a, b) =>
+                        (a.lastName || '').localeCompare(b.lastName || '') ||
+                        (a.firstName || '').localeCompare(b.firstName || ''),
+                ),
+        [contributors, alreadyAdded],
+    );
+    const filteredContributors = useMemo(() => {
+        const q = authorQuery.trim().toLowerCase();
+        if (!q) return selectableContributors;
+        return selectableContributors.filter(
+            (c) => contributorName(c).toLowerCase().includes(q) || contributorOrcid(c).toLowerCase().includes(q),
+        );
+    }, [authorQuery, selectableContributors]);
+    const noMatches = authorQuery.trim().length > 0 && filteredContributors.length === 0;
+    const hasSelectable = selectableContributors.length > 0;
+    // Reveal the add-new form when forced or when there is nothing selectable to pick.
+    const showAddNew = addNewForced || filteredContributors.length === 0;
 
     /* ---- validation ---- */
     const canSave = (() => {
         switch (request.type) {
             case 'author':
             case 'reviewer':
-                return name.trim().length > 0;
+                return (
+                    pickedId !== null ||
+                    (showAddNew &&
+                        newFirstName.trim().length > 0 &&
+                        newLastName.trim().length > 0 &&
+                        isCompleteOrcid(newOrcid))
+                );
             case 'outcome':
                 return outcomeText.trim().length > 0;
             case 'activity':
@@ -176,15 +224,16 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
         if (!canSave) return;
 
         if (isAuthorLike) {
-            const selected = contributors.find((c) => c.id === selectedId);
-            const unchanged =
-                selected &&
-                `${selected.firstName} ${selected.lastName}`.trim() === name.trim() &&
-                (selected.orcid || (selected.id.startsWith('0000-') ? selected.id : '')) === orcid.trim();
-            const id = unchanged ? selected!.id : upsertAuthorId(name, orcid);
+            let id: string;
+            if (pickedId) {
+                id = pickedId;
+            } else {
+                if (!newFirstName.trim() || !newLastName.trim() || !newOrcid.trim()) return;
+                id = upsertContributor(newFirstName, newLastName, newOrcid, newGit);
+                queryClient.invalidateQueries({queryKey: ['contributors']});
+            }
             const current = [...(document[listKey] || [])];
             current.push(id);
-            queryClient.invalidateQueries({queryKey: ['contributors']});
             onChange({[listKey]: current});
         } else if (request.type === 'outcome') {
             const builtVerbs = (['beginner', 'intermediate', 'expert'] as const)
@@ -253,28 +302,144 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
 
             {isAuthorLike && (
                 <>
-                    {contributors.length > 0 && (
-                        <FieldGroup label="Pick an existing contributor">
-                            <Select value={selectedId} onValueChange={pickContributor}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Search the contributor list" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {contributors.map((c) => (
-                                        <SelectItem key={c.id} value={c.id}>
-                                            {c.firstName} {c.lastName}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                    {/* Search existing contributors */}
+                    {(hasSelectable || authorQuery.trim().length > 0) && (
+                        <FieldGroup label={`Find an existing ${DRAWER_TITLES[request.type]}`}>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                    autoFocus
+                                    value={authorQuery}
+                                    onChange={(e) => {
+                                        setAuthorQuery(e.target.value);
+                                        setPickedId(null);
+                                        setAddNewForced(false);
+                                    }}
+                                    placeholder="Search by name or ORCID…"
+                                    className="pl-9"
+                                />
+                            </div>
                         </FieldGroup>
                     )}
-                    <FieldGroup label="Name">
-                        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
-                    </FieldGroup>
-                    <FieldGroup label="ORCID (optional)">
-                        <Input value={orcid} onChange={(e) => setOrcid(e.target.value)} placeholder="0000-0000-0000-0000" />
-                    </FieldGroup>
+
+                    {/* Selectable results */}
+                    {!showAddNew && (
+                        <div className="mb-3.5 flex max-h-64 flex-col gap-1.5 overflow-y-auto">
+                            {filteredContributors.map((c) => {
+                                const selected = pickedId === c.id;
+                                const cname = contributorName(c);
+                                const corcid = contributorOrcid(c);
+                                return (
+                                    <button
+                                        key={c.id}
+                                        type="button"
+                                        onClick={() => setPickedId(selected ? null : c.id)}
+                                        className={cn(
+                                            'flex cursor-pointer appearance-none items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors',
+                                            selected
+                                                ? 'border-navy bg-teal-surface'
+                                                : 'border-border bg-background hover:bg-accent',
+                                        )}
+                                    >
+                                        <Avatar className="h-8 w-8">
+                                            <AvatarFallback className="bg-teal-surface text-xs font-bold text-teal-ink">
+                                                {initialsOf(cname)}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-sm font-medium text-zinc-900">{cname}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                                {corcid || 'No ORCID on file'}
+                                            </div>
+                                        </div>
+                                        {selected && <Check className="h-4 w-4 flex-shrink-0 text-navy" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Force add-new when results exist but none picked */}
+                    {!showAddNew && !pickedId && (
+                        <Button
+                            variant="link"
+                            size="sm"
+                            className="mb-2 h-auto px-0"
+                            onClick={() => setAddNewForced(true)}
+                        >
+                            <Plus className="h-4 w-4" />
+                            Add someone new instead
+                        </Button>
+                    )}
+
+                    {/* No-match notice */}
+                    {noMatches && (
+                        <Alert variant="info" className="mb-3">
+                            No {DRAWER_TITLES[request.type]} matches “{authorQuery.trim()}”. Add them below.
+                        </Alert>
+                    )}
+
+                    {/* Add a new contributor */}
+                    {showAddNew && (
+                        <>
+                            <div className="mb-3.5 flex gap-2.5">
+                                <div className="flex-1">
+                                    <Label className="mb-1.5 block">First name</Label>
+                                    <Input
+                                        autoFocus={!hasSelectable}
+                                        value={newFirstName}
+                                        onChange={(e) => setNewFirstName(e.target.value)}
+                                        placeholder="First name"
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <Label className="mb-1.5 block">Last name</Label>
+                                    <Input
+                                        value={newLastName}
+                                        onChange={(e) => setNewLastName(e.target.value)}
+                                        placeholder="Last name"
+                                    />
+                                </div>
+                            </div>
+                            <FieldGroup label="ORCID">
+                                <Input
+                                    value={newOrcid}
+                                    onChange={(e) => setNewOrcid(formatOrcid(e.target.value))}
+                                    placeholder="0000-0000-0000-0000"
+                                    inputMode="numeric"
+                                    maxLength={19}
+                                />
+                                {newOrcid.length > 0 && !isCompleteOrcid(newOrcid) && (
+                                    <div className="mt-1 text-xs text-destructive">
+                                        Enter a full ORCID: 0000-0000-0000-0000
+                                    </div>
+                                )}
+                            </FieldGroup>
+                            <FieldGroup label="GitHub username (optional)">
+                                <Input
+                                    value={newGit}
+                                    onChange={(e) => setNewGit(e.target.value)}
+                                    placeholder="github-handle"
+                                />
+                            </FieldGroup>
+                            {addNewForced && hasSelectable && (
+                                <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="mb-2 h-auto px-0"
+                                    onClick={() => {
+                                        setAddNewForced(false);
+                                        setNewFirstName('');
+                                        setNewLastName('');
+                                        setNewOrcid('');
+                                        setNewGit('');
+                                    }}
+                                >
+                                    Back to search
+                                </Button>
+                            )}
+                        </>
+                    )}
                 </>
             )}
 

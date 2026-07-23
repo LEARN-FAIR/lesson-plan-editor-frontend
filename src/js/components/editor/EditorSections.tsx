@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React from 'react';
 import {
     BookOpen,
     Calendar,
@@ -12,10 +12,8 @@ import {
     Users,
     X,
 } from 'lucide-react';
-import {useQueryClient} from '@tanstack/react-query';
 import type {Activity, FairMarkdownDocument, LearningVerbLevel} from '../../types';
 import type {Contributor} from '../../services/contributorService';
-import customContributorService from '../../services/customContributorService';
 import {getActivityLearningOutcomes} from '../../utils/activityUtils';
 import MdxEditorComponent from '../common/MdxEditorComponent';
 import {Button} from '../ui/button';
@@ -224,76 +222,13 @@ const GeneralSection: React.FC<SectionProps> = ({document, onChange}) => {
 /* 2. Authors & reviewers                                             */
 /* ------------------------------------------------------------------ */
 
-/** Upsert a custom contributor from name + orcid, returning the id to store. */
-const upsertAuthorId = (name: string, orcid: string, existingId?: string): string => {
-    const trimmedName = name.trim();
-    const parts = trimmedName.split(/\s+/);
-    const firstName = parts[0] || trimmedName;
-    const lastName = parts.slice(1).join(' ');
-    const cleanOrcid = orcid.trim();
-    const id = cleanOrcid || existingId || customContributorService.generateId(firstName, lastName);
-    customContributorService.addCustomContributor({
-        id,
-        orcid: cleanOrcid || undefined,
-        firstName,
-        lastName,
-    });
-    return id;
-};
-
 const AuthorRow: React.FC<{
     id: string;
     contributors: Contributor[];
-    onSave: (name: string, orcid: string) => void;
     onDelete: () => void;
     dragHandle?: React.ReactNode;
-}> = ({id, contributors, onSave, onDelete, dragHandle}) => {
+}> = ({id, contributors, onDelete, dragHandle}) => {
     const resolved = resolveAuthor(id, contributors);
-    const [editing, setEditing] = useState(false);
-    const [name, setName] = useState(resolved.name);
-    const [orcid, setOrcid] = useState(resolved.orcid);
-
-    useEffect(() => {
-        if (!editing) {
-            setName(resolved.name);
-            setOrcid(resolved.orcid);
-        }
-    }, [resolved.name, resolved.orcid, editing]);
-
-    if (editing) {
-        return (
-            <Card className={rowCard}>
-                <div className="flex flex-wrap items-center gap-2.5">
-                    <Input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="Full name"
-                        className="h-8 min-w-[160px] flex-1 text-[13.5px]"
-                    />
-                    <Input
-                        value={orcid}
-                        onChange={(e) => setOrcid(e.target.value)}
-                        placeholder="ORCID"
-                        className="h-8 w-[190px] text-[13.5px]"
-                    />
-                    <Button
-                        size="sm"
-                        onClick={() => {
-                            if (!name.trim()) return;
-                            onSave(name, orcid);
-                            setEditing(false);
-                        }}
-                    >
-                        Save
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => setEditing(false)}>
-                        Cancel
-                    </Button>
-                </div>
-            </Card>
-        );
-    }
-
     return (
         <Card className={rowCard}>
             <div className="flex items-center gap-2.5">
@@ -307,23 +242,14 @@ const AuthorRow: React.FC<{
                     <div className="text-[14.5px] font-semibold text-zinc-900">{resolved.name}</div>
                     <div className="text-[12.5px] text-muted-foreground">{resolved.orcidLabel}</div>
                 </div>
-                <RowActions onEdit={() => setEditing(true)} onDelete={onDelete} />
+                <RowActions onDelete={onDelete} />
             </div>
         </Card>
     );
 };
 
 const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer, contributors}) => {
-    const queryClient = useQueryClient();
     const confirm = useConfirm();
-
-    const saveInline = (list: 'authors' | 'reviewers', index: number) => (name: string, orcid: string) => {
-        const current = [...(document[list] || [])];
-        const newId = upsertAuthorId(name, orcid, current[index]);
-        current[index] = newId;
-        queryClient.invalidateQueries({queryKey: ['contributors']});
-        onChange({[list]: current});
-    };
 
     const remove = (list: 'authors' | 'reviewers', index: number) => async () => {
         const current = [...(document[list] || [])];
@@ -358,7 +284,6 @@ const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer,
                             <AuthorRow
                                 id={id}
                                 contributors={contributors}
-                                onSave={saveInline('authors', index)}
                                 onDelete={remove('authors', index)}
                                 dragHandle={<DragHandle {...(handleProps as DragHandleProps)} />}
                             />
@@ -385,7 +310,6 @@ const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer,
                             <AuthorRow
                                 id={id}
                                 contributors={contributors}
-                                onSave={saveInline('reviewers', index)}
                                 onDelete={remove('reviewers', index)}
                                 dragHandle={<DragHandle {...(handleProps as DragHandleProps)} />}
                             />
