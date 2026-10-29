@@ -1,14 +1,16 @@
 import type {LucideIcon} from 'lucide-react';
-import {BookOpen, Calendar, ClipboardCheck, FileText, Info, Target, Users} from 'lucide-react';
+import {BookOpen, Calendar, ClipboardCheck, FileText, Info, Library, ListChecks, Target, Users} from 'lucide-react';
 import type {Contributor} from '../../services/contributorService';
 
-/** The seven jump-nav sections of the single-page editor. */
+/** The jump-nav sections of the single-page editor. */
 export type SectionKey =
     | 'general'
     | 'authors'
     | 'outcomes'
     | 'activities'
+    | 'delivery'
     | 'prerequisites'
+    | 'sources'
     | 'resources'
     | 'content';
 
@@ -25,9 +27,11 @@ export const SECTIONS_META: SectionMeta[] = [
     {key: 'authors', label: 'Authors', num: 2, icon: Users},
     {key: 'outcomes', label: 'Outcomes', num: 3, icon: Target},
     {key: 'activities', label: 'Activities', num: 4, icon: Calendar},
-    {key: 'prerequisites', label: 'Prerequisites', num: 5, icon: ClipboardCheck},
-    {key: 'resources', label: 'Resources', num: 6, icon: BookOpen},
-    {key: 'content', label: 'Content', num: 7, icon: FileText},
+    {key: 'delivery', label: 'Tasks & materials', num: 5, icon: ListChecks},
+    {key: 'prerequisites', label: 'Prerequisites', num: 6, icon: ClipboardCheck},
+    {key: 'sources', label: 'Sources', num: 7, icon: Library},
+    {key: 'resources', label: 'Resources', num: 8, icon: BookOpen},
+    {key: 'content', label: 'Content', num: 9, icon: FileText},
 ];
 
 /**
@@ -36,14 +40,12 @@ export const SECTIONS_META: SectionMeta[] = [
  * target inside the document model.
  */
 export interface DrawerRequest {
-    type: 'author' | 'reviewer' | 'outcome' | 'activity' | 'prerequisite' | 'resource';
+    type: 'author' | 'reviewer' | 'outcome' | 'activity' | 'task' | 'prerequisite' | 'source' | 'resource';
     mode: 'add' | 'edit';
     /** Activity subgroup the item belongs to. */
     section?: 'before' | 'during' | 'after';
-    /** Array index for prerequisite / resource / activity edits. */
+    /** Array index for outcome / task / prerequisite / source / resource / activity edits. */
     index?: number;
-    /** Outcome map key for outcome edits. */
-    outcomeKey?: string;
 }
 
 export type OpenDrawer = (request: DrawerRequest) => void;

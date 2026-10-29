@@ -4,6 +4,7 @@
 
 import githubService from './githubService';
 import logger from '../utils/logger';
+import {apiErrorFromBody} from './apiError';
 
 /**
  * API Adapter Service
@@ -75,20 +76,19 @@ class ApiAdapter {
         const response = await fetch(`${API_URL}${endpoint}`, this.addHeaders(options));
         
         if (!response.ok) {
-            let errorMessage = `API request failed: ${response.status}`;
+            const fallbackMessage = `API request failed: ${response.status}`;
+            let body: Record<string, unknown> = {};
             try {
-                const errorData = await response.json();
-                errorMessage = errorData.error || errorData.message || errorMessage;
-                
-                // If unauthorized, update authentication status
-                if (response.status === 401) {
-                    this.isAuthenticated = false;
-                    this.userData = null;
-                }
+                body = await response.json();
             } catch (e) {
-                // If parsing fails, use the default error message
+                // Non-JSON error body; fall back to the status message.
             }
-            throw new Error(errorMessage);
+            // If unauthorized, update authentication status
+            if (response.status === 401) {
+                this.isAuthenticated = false;
+                this.userData = null;
+            }
+            throw apiErrorFromBody(body, response.status, fallbackMessage);
         }
         
         return await response.json() as T;
@@ -101,12 +101,25 @@ class ApiAdapter {
      */
     getGitHubLoginUrl(redirectUrl?: string): string {
         let loginUrl = `${API_URL}/auth/github`;
-        
+
         if (redirectUrl) {
             const encodedRedirectUrl = encodeURIComponent(redirectUrl);
             loginUrl += `?redirect_url=${encodedRedirectUrl}`;
         }
-        
+
+        return loginUrl;
+    }
+
+    /**
+     * Get ORCID OAuth login URL (mirrors GitHub; backend establishes the same session).
+     */
+    getOrcidLoginUrl(redirectUrl?: string): string {
+        let loginUrl = `${API_URL}/auth/orcid`;
+
+        if (redirectUrl) {
+            loginUrl += `?redirect_url=${encodeURIComponent(redirectUrl)}`;
+        }
+
         return loginUrl;
     }
 
@@ -234,8 +247,8 @@ class ApiAdapter {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to create branch');
+            const body = await response.json().catch(() => ({}));
+            throw apiErrorFromBody(body, response.status, 'Failed to create branch');
         }
 
         return response.json();
@@ -252,6 +265,43 @@ class ApiAdapter {
             url += `&branch=${encodeURIComponent(branch)}`;
         }
         return this.request(url);
+    }
+
+    /**
+     * Public (unauthenticated) read of a published lesson plan's markdown, keyed by
+     * the public slug. The backend resolves which repo/branch is published and
+     * returns the file — the frontend never needs owner/repo/branch.
+     */
+    async getPublicLessonContent(category: string, lesson: string): Promise<string> {
+        const params = new URLSearchParams({category, lesson});
+        const result: any = await this.request(`/public/lesson-plans/file?${params.toString()}`);
+
+        if (typeof result === 'string') return result;
+        if (result && result.decodedContent !== undefined) return result.decodedContent;
+        if (result && result.content) {
+            try {
+                const base64 = String(result.content).replace(/\s/g, '');
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                return new TextDecoder('utf-8').decode(bytes);
+            } catch (e) {
+                logger.warn('Error decoding public lesson content:', e);
+                return result.content;
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Submit a public "suggest changes" proposal. The backend attaches identity from
+     * the session (GitHub/ORCID), resolves repo context, and opens a review request.
+     */
+    async submitSuggestions(payload: unknown): Promise<{url?: string}> {
+        return this.request('/suggestions', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
     }
 
     /**

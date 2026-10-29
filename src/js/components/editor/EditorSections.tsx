@@ -6,15 +6,17 @@ import {
     ClipboardCheck,
     FileText,
     Info,
+    Library,
+    ListChecks,
     type LucideIcon,
     Pencil,
     Target,
     Users,
     X,
 } from 'lucide-react';
-import type {Activity, FairMarkdownDocument, LearningVerbLevel} from '../../types';
+import type {Activity, DeliveryFormat, FairMarkdownDocument, Level, Reference} from '../../types';
 import type {Contributor} from '../../services/contributorService';
-import {getActivityLearningOutcomes} from '../../utils/activityUtils';
+import {getActivityLearningOutcomes, remapActivityOutcomes} from '../../utils/activityUtils';
 import MdxEditorComponent from '../common/MdxEditorComponent';
 import {Button} from '../ui/button';
 import {Badge} from '../ui/badge';
@@ -43,8 +45,15 @@ const STATUS_LABELS: Record<string, string> = {
     published: 'Published',
 };
 
-type Level = 'beginner' | 'intermediate' | 'expert';
+const LEVELS: Level[] = ['beginner', 'intermediate', 'expert'];
 const levelVariant = (level: Level) => level;
+
+const DELIVERY_LABELS: Record<DeliveryFormat, string> = {
+    in_person: 'In person',
+    online: 'Online',
+    hybrid: 'Hybrid',
+    self_paced: 'Self-paced',
+};
 
 interface SectionProps {
     document: FairMarkdownDocument;
@@ -207,14 +216,96 @@ const GeneralSection: React.FC<SectionProps> = ({document, onChange}) => {
                 </div>
             </div>
 
+            <div className="mb-[22px] grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
+                <div>
+                    <FieldLabel>Delivery format</FieldLabel>
+                    <Select
+                        value={document.delivery_format || ''}
+                        onValueChange={(value) => onChange({delivery_format: (value || undefined) as DeliveryFormat | undefined})}
+                    >
+                        <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Not specified">
+                                {(value: string) =>
+                                    value ? DELIVERY_LABELS[value as DeliveryFormat] ?? value : 'Not specified'
+                                }
+                            </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                            {Object.entries(DELIVERY_LABELS).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                    {label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div>
+                    <FieldLabel className="mb-1.5">Levels</FieldLabel>
+                    <div className="flex flex-wrap gap-2">
+                        {LEVELS.map((level) => {
+                            const active = document.levels?.includes(level);
+                            return (
+                                <button
+                                    key={level}
+                                    type="button"
+                                    aria-pressed={active}
+                                    onClick={() => {
+                                        const current = document.levels || [];
+                                        const next = active ? current.filter((l) => l !== level) : [...current, level];
+                                        onChange({levels: next.length ? LEVELS.filter((l) => next.includes(l)) : undefined});
+                                    }}
+                                    className={cn(
+                                        'h-[30px] cursor-pointer appearance-none rounded-md border-0 px-3 text-[13px] font-semibold capitalize transition-colors',
+                                        active ? 'bg-navy text-white' : 'bg-zinc-100 text-zinc-400 hover:bg-zinc-200',
+                                    )}
+                                >
+                                    {level}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+
             <FieldLabel className="mb-1.5">Summary</FieldLabel>
             <Textarea
-                value={document.description || ''}
-                onChange={(e) => onChange({description: e.target.value})}
+                value={document.summary ?? document.description ?? ''}
+                onChange={(e) => onChange({summary: e.target.value})}
                 placeholder="Enter a summary for this lesson plan…"
                 className="min-h-28"
             />
+
+            <ManagedInfo document={document} />
         </>
+    );
+};
+
+/** Read-only values written by the Zenodo deposit script and Jekyll. */
+const ManagedInfo: React.FC<{document: FairMarkdownDocument}> = ({document}) => {
+    const rows: [string, string | undefined][] = [
+        ['DOI', document.doi],
+        ['Concept DOI', document.zenodo_concept_doi],
+        ['Permalink', document.permalink],
+        ['Last updated', document.last_updated],
+    ];
+    const present = rows.filter(([, value]) => value);
+    if (present.length === 0) return null;
+    const sandbox = document.doi?.startsWith('10.5072/');
+
+    return (
+        <div className="mt-[22px] rounded-md bg-zinc-50 px-4 py-3 text-[12.5px] text-muted-foreground">
+            <div className="mb-1.5 font-semibold text-zinc-700">
+                Managed automatically (read-only){sandbox ? ' · sandbox DOI, not citable' : ''}
+            </div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
+                {present.map(([label, value]) => (
+                    <React.Fragment key={label}>
+                        <dt>{label}</dt>
+                        <dd className="break-all text-zinc-700">{value}</dd>
+                    </React.Fragment>
+                ))}
+            </dl>
+        </div>
     );
 };
 
@@ -327,56 +418,80 @@ const AuthorsSection: React.FC<SectionProps> = ({document, onChange, openDrawer,
 
 const OutcomesSection: React.FC<SectionProps> = ({document, onChange, openDrawer}) => {
     const confirm = useConfirm();
-    const outcomes = document.learning_outcomes || {};
-    const keys = Object.keys(outcomes).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+    const outcomes = document.learning_outcomes || [];
 
-    const remove = async (key: string) => {
-        const label = outcomes[key]?.outcome;
+    const remove = async (index: number) => {
+        const label = outcomes[index]?.title;
         const ok = await confirm({
             title: 'Delete learning outcome?',
             description: label
-                ? `Are you sure you want to delete “${truncate(label)}”?`
-                : `Are you sure you want to delete learning outcome ${key}?`,
+                ? `Are you sure you want to delete “${truncate(label)}”? Activities linked to it will be unlinked.`
+                : `Are you sure you want to delete learning outcome ${index + 1}?`,
         });
         if (!ok) return;
-        const {[key]: _removed, ...rest} = outcomes;
-        onChange({learning_outcomes: rest});
+        const removed = index + 1;
+        onChange({
+            learning_outcomes: outcomes.filter((_, i) => i !== index),
+            activities: remapActivityOutcomes(document.activities, (n) =>
+                n === removed ? null : n > removed ? n - 1 : n,
+            ),
+        });
+    };
+
+    // Reordering shifts positions, so activity references follow the moved outcome.
+    const reorder = (from: number, to: number) => {
+        const positionOf = (n: number) => {
+            const old = n - 1;
+            if (old === from) return to + 1;
+            if (from < to && old > from && old <= to) return old;
+            if (from > to && old >= to && old < from) return old + 2;
+            return n;
+        };
+        onChange({
+            learning_outcomes: arrayMove(outcomes, from, to),
+            activities: remapActivityOutcomes(document.activities, positionOf),
+        });
     };
 
     return (
         <>
-            <div className="flex flex-col gap-3">
-                {keys.length === 0 ? (
-                    <EmptyState>No learning outcomes yet.</EmptyState>
-                ) : (
-                    keys.map((key) => {
-                        const outcome = outcomes[key];
-                        return (
-                            <Card key={key} className="px-[18px] py-4">
-                                <div className="flex gap-3">
-                                    <div className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md bg-navy text-[12.5px] font-bold text-white">
-                                        {key}
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <div className="mb-2.5 text-[14.5px] text-zinc-900">{outcome?.outcome || ''}</div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {(outcome?.verbs || []).map((v: LearningVerbLevel, i: number) => (
-                                                <Badge key={i} variant={levelVariant(v.level)}>
-                                                    {v.verb || v.level}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <RowActions
-                                        onEdit={() => openDrawer({type: 'outcome', mode: 'edit', outcomeKey: key})}
-                                        onDelete={() => remove(key)}
-                                    />
+            {outcomes.length === 0 ? (
+                <EmptyState>No learning outcomes yet.</EmptyState>
+            ) : (
+                <SortableList
+                    items={outcomes}
+                    getId={(outcome) => `outcome-${outcome.title}`}
+                    onReorder={reorder}
+                    className="flex flex-col gap-3"
+                    renderItem={(outcome, index, handleProps) => (
+                        <Card className="px-[18px] py-4">
+                            <div className="flex gap-3">
+                                <DragHandle {...(handleProps as DragHandleProps)} />
+                                <div className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md bg-navy text-[12.5px] font-bold text-white">
+                                    {index + 1}
                                 </div>
-                            </Card>
-                        );
-                    })
-                )}
-            </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="mb-1 text-[14.5px] text-zinc-900">{outcome.title}</div>
+                                    {outcome.body && (
+                                        <div className="mb-2.5 text-[13px] text-muted-foreground">{outcome.body}</div>
+                                    )}
+                                    <div className="flex flex-wrap gap-2">
+                                        {(outcome.levels || []).map((level) => (
+                                            <Badge key={level} variant={levelVariant(level)} className="capitalize">
+                                                {level}
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                </div>
+                                <RowActions
+                                    onEdit={() => openDrawer({type: 'outcome', mode: 'edit', index})}
+                                    onDelete={() => remove(index)}
+                                />
+                            </div>
+                        </Card>
+                    )}
+                />
+            )}
         </>
     );
 };
@@ -391,8 +506,7 @@ const ACTIVITY_GROUPS: {section: 'before' | 'during' | 'after'; title: string}[]
     {section: 'after', title: 'After the lesson'},
 ];
 
-const activityText = (a: Activity): string =>
-    Array.isArray(a.activities) ? a.activities.join('\n') : a.activities || '';
+const activityText = (a: Activity): string => [a.title, a.description].filter(Boolean).join(' — ');
 
 const ActivitiesSection: React.FC<SectionProps> = ({document, onChange, openDrawer}) => {
     const confirm = useConfirm();
@@ -430,7 +544,7 @@ const ActivitiesSection: React.FC<SectionProps> = ({document, onChange, openDraw
                         ) : (
                             <SortableList
                                 items={items}
-                                getId={(activity) => `${section}-${activityText(activity)}-${activity.time}-${activity.type}`}
+                                getId={(activity) => `${section}-${activityText(activity)}-${activity.duration_min ?? ''}-${activity.type}`}
                                 onReorder={(from, to) =>
                                     onChange({
                                         activities: {...document.activities, [section]: arrayMove(items, from, to)},
@@ -446,11 +560,18 @@ const ActivitiesSection: React.FC<SectionProps> = ({document, onChange, openDraw
                                                 {los.join(', ') || '–'}
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <div className="mb-2 whitespace-pre-wrap text-sm text-zinc-900">
-                                                    {activityText(activity)}
+                                                {activity.title && (
+                                                    <div className="mb-0.5 text-[14.5px] font-semibold text-zinc-900">
+                                                        {activity.title}
+                                                    </div>
+                                                )}
+                                                <div className="mb-2 line-clamp-3 whitespace-pre-wrap text-sm text-zinc-900">
+                                                    {activity.description}
                                                 </div>
                                                 <div className="flex flex-wrap gap-2">
-                                                    {activity.time && <Badge variant="meta">{activity.time}</Badge>}
+                                                    {activity.duration_min != null && (
+                                                        <Badge variant="meta">{activity.duration_min} min</Badge>
+                                                    )}
                                                     {activity.type && <Badge variant="meta">{activity.type}</Badge>}
                                                     {activity.level && (
                                                         <Badge variant={levelVariant(activity.level)} className="capitalize">
@@ -524,52 +645,163 @@ const PrerequisitesSection: React.FC<SectionProps> = ({document, onChange, openD
 /* 6. Additional resources                                           */
 /* ------------------------------------------------------------------ */
 
-const resourceMeta = (r: {author?: string; url?: string; doi?: string}): string =>
-    [r.author, r.doi ? `DOI: ${r.doi}` : r.url].filter(Boolean).join(' · ');
+const referenceMeta = (r: Reference): string =>
+    [r.authors, r.type, r.year, r.doi ? `DOI: ${r.doi}` : r.url].filter(Boolean).join(' · ');
 
-const ResourcesSection: React.FC<SectionProps> = ({document, onChange, openDrawer}) => {
+/** Numbered, sortable list of references; used for both sources and additional resources. */
+const ReferenceList: React.FC<
+    SectionProps & {field: 'sources' | 'additionalResources'; type: 'source' | 'resource'; noun: string}
+> = ({document, onChange, openDrawer, field, type, noun}) => {
     const confirm = useConfirm();
-    const items = document.additionalResources || [];
+    const items: Reference[] = document[field] || [];
     const remove = async (index: number) => {
         const ok = await confirm({
-            title: 'Delete resource?',
+            title: `Delete ${noun}?`,
             description: `Are you sure you want to delete “${truncate(items[index].title)}”?`,
         });
         if (!ok) return;
         const list = [...items];
         list.splice(index, 1);
-        onChange({additionalResources: list});
+        onChange({[field]: list});
     };
 
     return (
         <>
             {items.length === 0 ? (
-                <EmptyState>No resources yet.</EmptyState>
+                <EmptyState>No {noun}s yet.</EmptyState>
             ) : (
                 <SortableList
                     items={items}
-                    getId={(item) => `resource-${item.title}-${item.url ?? item.doi ?? ''}`}
-                    onReorder={(from, to) => onChange({additionalResources: arrayMove(items, from, to)})}
+                    getId={(item) => `${type}-${item.title}-${item.url ?? item.doi ?? ''}`}
+                    onReorder={(from, to) => onChange({[field]: arrayMove(items, from, to)})}
                     className="flex flex-col gap-2.5"
-                    renderItem={(resource, index, handleProps) => (
+                    renderItem={(item, index, handleProps) => (
                         <Card className={cn(rowCard, 'flex flex-row items-center gap-2.5')}>
                             <DragHandle {...(handleProps as DragHandleProps)} />
+                            <div className="flex h-6 min-w-[24px] flex-shrink-0 items-center justify-center rounded-md bg-teal-surface px-1 text-[11.5px] font-bold text-teal-ink">
+                                {index + 1}
+                            </div>
                             <div className="min-w-0 flex-1">
-                                <div className="text-[14.5px] font-semibold text-zinc-900">{resource.title}</div>
-                                {resourceMeta(resource) && (
+                                <div className="text-[14.5px] font-semibold text-zinc-900">{item.title}</div>
+                                {referenceMeta(item) && (
                                     <div className="mt-0.5 break-words text-[12.5px] text-muted-foreground">
-                                        {resourceMeta(resource)}
+                                        {referenceMeta(item)}
                                     </div>
                                 )}
                             </div>
                             <RowActions
-                                onEdit={() => openDrawer({type: 'resource', mode: 'edit', index})}
+                                onEdit={() => openDrawer({type, mode: 'edit', index})}
                                 onDelete={() => remove(index)}
                             />
                         </Card>
                     )}
                 />
             )}
+        </>
+    );
+};
+
+const SourcesSection: React.FC<SectionProps> = (props) => (
+    <ReferenceList {...props} field="sources" type="source" noun="source" />
+);
+
+const ResourcesSection: React.FC<SectionProps> = (props) => (
+    <ReferenceList {...props} field="additionalResources" type="resource" noun="resource" />
+);
+
+/* ------------------------------------------------------------------ */
+/* Tasks, materials and take-home message                             */
+/* ------------------------------------------------------------------ */
+
+const DeliverySection: React.FC<SectionProps> = ({document, onChange, openDrawer}) => {
+    const confirm = useConfirm();
+    const tasks = document.tasks || [];
+    const materials = document.materials || {};
+
+    const removeTask = async (index: number) => {
+        const ok = await confirm({
+            title: 'Delete task?',
+            description: `Are you sure you want to delete “${truncate(tasks[index].title)}”?`,
+        });
+        if (!ok) return;
+        onChange({tasks: tasks.filter((_, i) => i !== index)});
+    };
+
+    const setMaterial = (key: 'participants' | 'trainer', value: string) => {
+        const next = {...materials, [key]: value};
+        if (!value) delete next[key];
+        onChange({materials: Object.keys(next).length ? next : undefined});
+    };
+
+    return (
+        <>
+            <SubHeader title="Summary of tasks and actions">
+                <Button size="sm" variant="secondary" onClick={() => openDrawer({type: 'task', mode: 'add'})}>
+                    + Add task
+                </Button>
+            </SubHeader>
+            <div className="mb-[26px]">
+                {tasks.length === 0 ? (
+                    <EmptyState>No tasks yet.</EmptyState>
+                ) : (
+                    <SortableList
+                        items={tasks}
+                        getId={(task) => `task-${task.title}`}
+                        onReorder={(from, to) => onChange({tasks: arrayMove(tasks, from, to)})}
+                        className="flex flex-col gap-2.5"
+                        renderItem={(task, index, handleProps) => (
+                            <Card className={cn(rowCard, 'flex flex-row items-start gap-2.5')}>
+                                <DragHandle {...(handleProps as DragHandleProps)} />
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-[14.5px] font-semibold text-zinc-900">{task.title}</div>
+                                    {task.description && (
+                                        <div className="mt-0.5 text-[13px] text-muted-foreground">{task.description}</div>
+                                    )}
+                                </div>
+                                <RowActions
+                                    onEdit={() => openDrawer({type: 'task', mode: 'edit', index})}
+                                    onDelete={() => removeTask(index)}
+                                />
+                            </Card>
+                        )}
+                    />
+                )}
+                {document.tasks_text && tasks.length === 0 && (
+                    <div className="mt-2 rounded-md bg-zinc-50 px-4 py-3 text-[13px] text-muted-foreground">
+                        <div className="mb-1 font-semibold text-zinc-700">
+                            Existing tasks (markdown, kept as is). Add tasks above to replace them.
+                        </div>
+                        <div className="whitespace-pre-wrap">{document.tasks_text}</div>
+                    </div>
+                )}
+            </div>
+
+            <SubHeader title="Materials and equipment" />
+            <div className="mb-[26px] grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+                <div>
+                    <FieldLabel>Participants</FieldLabel>
+                    <Textarea
+                        value={materials.participants || ''}
+                        onChange={(e) => setMaterial('participants', e.target.value)}
+                        placeholder="e.g. A computer and internet access"
+                    />
+                </div>
+                <div>
+                    <FieldLabel>Trainer</FieldLabel>
+                    <Textarea
+                        value={materials.trainer || ''}
+                        onChange={(e) => setMaterial('trainer', e.target.value)}
+                        placeholder="e.g. Slides, examples, a timer"
+                    />
+                </div>
+            </div>
+
+            <SubHeader title="Take-home message" />
+            <Textarea
+                value={document.take_home || ''}
+                onChange={(e) => onChange({take_home: e.target.value || undefined})}
+                placeholder="The one message participants should remember"
+            />
         </>
     );
 };
@@ -626,9 +858,12 @@ const EditorSections: React.FC<EditorSectionsProps> = (props) => {
             <SectionCard id="sec-activities" num={4} title="Activities" icon={Calendar} refEl={sectionRefs.activities}>
                 <ActivitiesSection {...props} />
             </SectionCard>
+            <SectionCard id="sec-delivery" num={5} title="Tasks & materials" icon={ListChecks} refEl={sectionRefs.delivery}>
+                <DeliverySection {...props} />
+            </SectionCard>
             <SectionCard
                 id="sec-prerequisites"
-                num={5}
+                num={6}
                 title="Prerequisites"
                 icon={ClipboardCheck}
                 refEl={sectionRefs.prerequisites}
@@ -641,8 +876,22 @@ const EditorSections: React.FC<EditorSectionsProps> = (props) => {
                 <PrerequisitesSection {...props} />
             </SectionCard>
             <SectionCard
+                id="sec-sources"
+                num={7}
+                title="Sources"
+                icon={Library}
+                refEl={sectionRefs.sources}
+                action={
+                    <Button size="sm" onClick={() => props.openDrawer({type: 'source', mode: 'add'})}>
+                        + Add source
+                    </Button>
+                }
+            >
+                <SourcesSection {...props} />
+            </SectionCard>
+            <SectionCard
                 id="sec-resources"
-                num={6}
+                num={8}
                 title="Additional resources"
                 icon={BookOpen}
                 refEl={sectionRefs.resources}
@@ -654,7 +903,7 @@ const EditorSections: React.FC<EditorSectionsProps> = (props) => {
             >
                 <ResourcesSection {...props} />
             </SectionCard>
-            <SectionCard id="sec-content" num={7} title="Content" icon={FileText} refEl={sectionRefs.content}>
+            <SectionCard id="sec-content" num={9} title="Content" icon={FileText} refEl={sectionRefs.content}>
                 <ContentSection {...props} />
             </SectionCard>
         </>

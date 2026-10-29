@@ -5,6 +5,18 @@ import githubService from './githubService';
 import { invalidateAuthQueries } from './authQueryHooks';
 
 /**
+ * Redirect to ORCID for OAuth authentication via the backend. Mirrors
+ * githubService.redirectToGitHub: stores the return URL and hands off to the
+ * backend, which establishes the same session cookie and returns to redirect_url.
+ */
+export const redirectToOrcid = (redirectUrl?: string) => {
+    if (redirectUrl) {
+        localStorage.setItem('redirect_url', redirectUrl);
+    }
+    window.location.href = apiAdapter.getOrcidLoginUrl(redirectUrl);
+};
+
+/**
  * Perform logout with cache invalidation
  * @param queryClient React Query client instance
  */

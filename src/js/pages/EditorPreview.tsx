@@ -11,45 +11,30 @@ const MOCK_DOC: FairMarkdownDocument = {
     layout: 'lesson-plan',
     authors: ['Maria Chen', 'Devon Osei'],
     reviewers: ['Amara Singh'],
-    description:
+    summary:
         'A hands-on session introducing the FAIR principles and how they apply to everyday research data management decisions.',
     fair_elements: ['F', 'A', 'I'],
-    learning_outcomes: {
-        '1': {
-            outcome: 'Explain the four FAIR principles and why they matter for research data.',
-            verbs: [
-                {verb: 'Explain', level: 'beginner'},
-                {verb: 'Summarize', level: 'beginner'},
-            ],
-        },
-        '2': {
-            outcome: 'Apply metadata standards to describe a dataset for discovery.',
-            verbs: [
-                {verb: 'Apply', level: 'intermediate'},
-                {verb: 'Annotate', level: 'intermediate'},
-            ],
-        },
-        '3': {
-            outcome: 'Evaluate a data management plan against FAIR criteria.',
-            verbs: [{verb: 'Evaluate', level: 'expert'}],
-        },
-    },
+    learning_outcomes: [
+    ],
     activities: {
         before: [
-            {learning_outcomes: [1], activities: 'Read the short FAIR primer and note two questions.', time: '15 min', type: 'Reading', level: 'beginner'},
+            {learning_outcomes: [1], description: 'Read the short FAIR primer and note two questions.', duration_min: 15, type: 'Reading', level: 'beginner'},
         ],
         during: [
-            {learning_outcomes: [1], activities: 'Group discussion on real-world FAIR failures.', time: '20 min', type: 'Discussion', level: 'beginner'},
-            {learning_outcomes: [2], activities: 'Hands-on metadata tagging exercise using sample datasets.', time: '40 min', type: 'Workshop', level: 'intermediate'},
+            {learning_outcomes: [1], description: 'Group discussion on real-world FAIR failures.', duration_min: 20, type: 'Discussion', level: 'beginner'},
+            {learning_outcomes: [2], description: 'Hands-on metadata tagging exercise using sample datasets.', duration_min: 40, type: 'Workshop', level: 'intermediate'},
         ],
         after: [
-            {learning_outcomes: [3], activities: 'Peer-review a data management plan using the FAIR checklist.', time: '30 min', type: 'Assignment', level: 'expert'},
+            {learning_outcomes: [3], description: 'Peer-review a data management plan using the FAIR checklist.', duration_min: 30, type: 'Assignment', level: 'expert'},
         ],
     },
     prerequisites: ['Basic understanding of the research data lifecycle', 'Familiarity with spreadsheet software'],
     terms4FAIRskills: [],
+    sources: [
+        {authors: 'GO FAIR', title: 'FAIR principles', type: 'Internet', url: 'https://www.go-fair.org/fair-principles/', accessed: '2026-09-01'},
+    ],
     additionalResources: [
-        {title: 'GO FAIR Initiative', author: 'GO FAIR', url: 'https://go-fair.org'},
+        {title: 'GO FAIR Initiative', authors: 'GO FAIR', url: 'https://go-fair.org'},
         {title: 'The FAIR Guiding Principles for scientific data management', doi: '10.1038/sdata.2016.18'},
     ],
     content: '## Session outline\n\nWrite your markdown content here…',

@@ -1,6 +1,6 @@
 import React, {useMemo, useState} from 'react';
 import {useQueryClient} from '@tanstack/react-query';
-import type {Activity, FairMarkdownDocument, LearningOutcome, Resource} from '../../types';
+import type {Activity, FairMarkdownDocument, Level, LearningOutcome, Reference, Task} from '../../types';
 import type {Contributor} from '../../services/contributorService';
 import customContributorService from '../../services/customContributorService';
 import {Check, ChevronDown, Plus, Search} from 'lucide-react';
@@ -28,7 +28,9 @@ const DRAWER_TITLES: Record<DrawerRequest['type'], string> = {
     reviewer: 'reviewer',
     outcome: 'learning outcome',
     activity: 'activity',
+    task: 'task',
     prerequisite: 'prerequisite',
+    source: 'source',
     resource: 'resource',
 };
 
@@ -106,18 +108,20 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
 
     /* ---- outcome state ---- */
     const editingOutcome =
-        request.type === 'outcome' && request.mode === 'edit' && request.outcomeKey
-            ? document.learning_outcomes[request.outcomeKey]
+        request.type === 'outcome' && request.mode === 'edit' && request.index !== undefined
+            ? document.learning_outcomes?.[request.index]
             : undefined;
-    const [outcomeText, setOutcomeText] = useState(editingOutcome?.outcome || '');
-    const initialVerbs = () => {
-        const v = {beginner: '', intermediate: '', expert: ''};
-        editingOutcome?.verbs?.forEach((verb) => {
-            v[verb.level] = verb.verb || '';
-        });
-        return v;
-    };
-    const [verbs, setVerbs] = useState(initialVerbs);
+    const [outcomeText, setOutcomeText] = useState(editingOutcome?.title || '');
+    const [outcomeBody, setOutcomeBody] = useState(editingOutcome?.body || '');
+    const [outcomeLevels, setOutcomeLevels] = useState<Level[]>(editingOutcome?.levels || []);
+
+    /* ---- task state ---- */
+    const editingTask =
+        request.type === 'task' && request.mode === 'edit' && request.index !== undefined
+            ? document.tasks?.[request.index]
+            : undefined;
+    const [taskTitle, setTaskTitle] = useState(editingTask?.title || '');
+    const [taskDescription, setTaskDescription] = useState(editingTask?.description || '');
 
     /* ---- activity state ---- */
     const editingActivity =
@@ -127,18 +131,13 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
     const [activityLos, setActivityLos] = useState<string[]>(
         editingActivity ? getActivityLearningOutcomes(editingActivity).map(String) : [],
     );
-    const [activityText, setActivityText] = useState(
-        editingActivity
-            ? Array.isArray(editingActivity.activities)
-                ? editingActivity.activities.join('\n')
-                : editingActivity.activities
-            : '',
+    const [activityTitle, setActivityTitle] = useState(editingActivity?.title || '');
+    const [activityText, setActivityText] = useState(editingActivity?.description || '');
+    const [activityTime, setActivityTime] = useState(
+        editingActivity?.duration_min != null ? String(editingActivity.duration_min) : '',
     );
-    const [activityTime, setActivityTime] = useState(editingActivity?.time || '');
     const [activityType, setActivityType] = useState(editingActivity?.type || '');
-    const [activityLevel, setActivityLevel] = useState<'beginner' | 'intermediate' | 'expert'>(
-        editingActivity?.level || 'beginner',
-    );
+    const [activityLevel, setActivityLevel] = useState<Level>(editingActivity?.level || 'beginner');
 
     /* ---- prerequisite state ---- */
     const editingPrereq =
@@ -147,19 +146,22 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
             : undefined;
     const [prereq, setPrereq] = useState(editingPrereq || '');
 
-    /* ---- resource state ---- */
-    const editingResource =
-        request.type === 'resource' && request.mode === 'edit' && request.index !== undefined
-            ? document.additionalResources?.[request.index]
+    /* ---- source / resource state (both are references) ---- */
+    const isReference = request.type === 'source' || request.type === 'resource';
+    const refField: 'sources' | 'additionalResources' = request.type === 'source' ? 'sources' : 'additionalResources';
+    const editingRef =
+        isReference && request.mode === 'edit' && request.index !== undefined
+            ? document[refField]?.[request.index]
             : undefined;
-    const [resTitle, setResTitle] = useState(editingResource?.title || '');
-    const [resAuthor, setResAuthor] = useState(editingResource?.author || '');
-    const [resUrl, setResUrl] = useState(editingResource?.url || '');
-    const [resDoi, setResDoi] = useState(editingResource?.doi || '');
-    const [resInfo, setResInfo] = useState(editingResource?.additionalInformation || '');
+    const [ref, setRef] = useState<Record<string, string>>(() =>
+        Object.fromEntries(
+            Object.entries(editingRef || {}).map(([k, v]) => [k, v == null ? '' : String(v)]),
+        ),
+    );
+    const setRefField = (key: string, value: string) => setRef((prev) => ({...prev, [key]: value}));
 
     const outcomeKeys = useMemo(
-        () => Object.keys(document.learning_outcomes || {}).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)),
+        () => (document.learning_outcomes || []).map((_, i) => String(i + 1)),
         [document.learning_outcomes],
     );
 
@@ -196,6 +198,8 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
     const showAddNew = addNewForced || filteredContributors.length === 0;
 
     /* ---- validation ---- */
+    // Bare DOIs only (no https://doi.org/ prefix), matching the handbook's front matter check.
+    const doiIsValid = !(ref.doi || '').trim() || /^10\.\d{4,9}\/\S+$/.test(ref.doi.trim());
     const canSave = (() => {
         switch (request.type) {
             case 'author':
@@ -209,12 +213,21 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                 );
             case 'outcome':
                 return outcomeText.trim().length > 0;
+            case 'task':
+                return taskTitle.trim().length > 0;
             case 'activity':
-                return activityLos.length > 0 && activityText.trim().length > 0 && activityTime.trim().length > 0 && activityType.trim().length > 0;
+                return (
+                    activityLos.length > 0 &&
+                    activityText.trim().length > 0 &&
+                    (activityTime.trim() === '' || /^\d+$/.test(activityTime.trim())) &&
+                    activityType.trim().length > 0
+                );
             case 'prerequisite':
                 return prereq.trim().length > 0;
+            case 'source':
+                return (ref.title || '').trim().length > 0 && doiIsValid;
             case 'resource':
-                return resTitle.trim().length > 0 && (resUrl.trim().length > 0 || resDoi.trim().length > 0);
+                return (ref.title || '').trim().length > 0 && (!!(ref.url || '').trim() || !!(ref.doi || '').trim()) && doiIsValid;
             default:
                 return false;
         }
@@ -236,26 +249,43 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
             current.push(id);
             onChange({[listKey]: current});
         } else if (request.type === 'outcome') {
-            const builtVerbs = (['beginner', 'intermediate', 'expert'] as const)
-                .filter((level) => verbs[level].trim())
-                .map((level) => ({verb: verbs[level].trim(), level}));
-            const outcome: LearningOutcome = {outcome: outcomeText.trim(), verbs: builtVerbs};
-            const outcomes = {...(document.learning_outcomes || {})};
-            if (request.mode === 'edit' && request.outcomeKey) {
-                outcomes[request.outcomeKey] = outcome;
+            const outcome: LearningOutcome = {
+                title: outcomeText.trim(),
+                ...(outcomeBody.trim() && {body: outcomeBody.trim()}),
+                ...(outcomeLevels.length && {
+                    levels: (['beginner', 'intermediate', 'expert'] as const).filter((l) => outcomeLevels.includes(l)),
+                }),
+            };
+            const outcomes = [...(document.learning_outcomes || [])];
+            if (request.mode === 'edit' && request.index !== undefined) {
+                outcomes[request.index] = outcome;
             } else {
-                const numericIds = Object.keys(outcomes).map((k) => parseInt(k, 10)).filter((n) => !Number.isNaN(n));
-                const nextId = numericIds.length ? Math.max(...numericIds) + 1 : 1;
-                outcomes[String(nextId)] = outcome;
+                outcomes.push(outcome);
             }
             onChange({learning_outcomes: outcomes});
+        } else if (request.type === 'task') {
+            const task: Task = {
+                title: taskTitle.trim(),
+                ...(taskDescription.trim() && {description: taskDescription.trim()}),
+            };
+            const list = [...(document.tasks || [])];
+            if (request.mode === 'edit' && request.index !== undefined) {
+                list[request.index] = task;
+            } else {
+                list.push(task);
+            }
+            onChange({tasks: list});
         } else if (request.type === 'activity' && request.section) {
             const activity: Activity = {
-                learning_outcomes: activityLos.map((k) => parseInt(k, 10)).filter((n) => !Number.isNaN(n)),
-                activities: activityText.trim(),
-                time: activityTime.trim(),
+                ...(activityTitle.trim() && {title: activityTitle.trim()}),
+                description: activityText.trim(),
+                ...(activityTime.trim() && {duration_min: parseInt(activityTime.trim(), 10)}),
                 type: activityType.trim(),
                 level: activityLevel,
+                learning_outcomes: activityLos
+                    .map((k) => parseInt(k, 10))
+                    .filter((n) => !Number.isNaN(n))
+                    .sort((a, b) => a - b),
             };
             const list = [...(document.activities?.[request.section] || [])];
             if (request.mode === 'edit' && request.index !== undefined) {
@@ -272,21 +302,28 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                 list.push(prereq.trim());
             }
             onChange({prerequisites: list});
-        } else if (request.type === 'resource') {
-            const resource: Resource = {
-                title: resTitle.trim(),
-                ...(resAuthor.trim() && {author: resAuthor.trim()}),
-                ...(resUrl.trim() && {url: resUrl.trim()}),
-                ...(resDoi.trim() && {doi: resDoi.trim()}),
-                ...(resInfo.trim() && {additionalInformation: resInfo.trim()}),
-            };
-            const list = [...(document.additionalResources || [])];
+        } else if (isReference) {
+            const cleaned = Object.fromEntries(
+                Object.entries(ref)
+                    .map(([k, v]) => [k, v.trim()])
+                    .filter(([, v]) => v !== ''),
+            ) as unknown as Reference;
+            // Keep numeric fields numeric so untouched values round-trip as written.
+            (['year', 'volume', 'number'] as const).forEach((key) => {
+                const value = cleaned[key];
+                if (typeof value === 'string' && /^\d+$/.test(value)) cleaned[key] = parseInt(value, 10);
+            });
+            const list = [...(document[refField] || [])];
             if (request.mode === 'edit' && request.index !== undefined) {
-                list[request.index] = resource;
+                list[request.index] = {...list[request.index], ...cleaned};
+                // Cleared fields must disappear from the saved reference.
+                Object.keys(list[request.index]).forEach((key) => {
+                    if (!(key in cleaned)) delete (list[request.index] as Record<string, unknown>)[key];
+                });
             } else {
-                list.push(resource);
+                list.push(cleaned);
             }
-            onChange({additionalResources: list});
+            onChange({[refField]: list});
         }
 
         onClose();
@@ -453,11 +490,53 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                             className="h-[76px]"
                         />
                     </FieldGroup>
-                    <div className="mb-2 flex flex-col gap-2">
-                        <Input value={verbs.beginner} onChange={(e) => setVerbs({...verbs, beginner: e.target.value})} placeholder="Beginner verb" className="text-[13.5px]" />
-                        <Input value={verbs.intermediate} onChange={(e) => setVerbs({...verbs, intermediate: e.target.value})} placeholder="Intermediate verb" className="text-[13.5px]" />
-                        <Input value={verbs.expert} onChange={(e) => setVerbs({...verbs, expert: e.target.value})} placeholder="Expert verb" className="text-[13.5px]" />
-                    </div>
+                    <FieldGroup label="Explanation (optional)">
+                        <Textarea
+                            value={outcomeBody}
+                            onChange={(e) => setOutcomeBody(e.target.value)}
+                            placeholder="Extra detail about this outcome…"
+                        />
+                    </FieldGroup>
+                    <FieldGroup label="Levels">
+                        <div className="flex flex-wrap gap-2">
+                            {(['beginner', 'intermediate', 'expert'] as const).map((level) => {
+                                const active = outcomeLevels.includes(level);
+                                return (
+                                    <button
+                                        key={level}
+                                        type="button"
+                                        aria-pressed={active}
+                                        onClick={() =>
+                                            setOutcomeLevels((prev) =>
+                                                active ? prev.filter((l) => l !== level) : [...prev, level],
+                                            )
+                                        }
+                                        className={cn(
+                                            'h-[30px] cursor-pointer appearance-none rounded-md border-0 px-3 text-[13px] font-semibold capitalize transition-colors',
+                                            active ? 'bg-navy text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200',
+                                        )}
+                                    >
+                                        {level}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </FieldGroup>
+                </>
+            )}
+
+            {request.type === 'task' && (
+                <>
+                    <FieldGroup label="Task">
+                        <Input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} placeholder="Trainer action" />
+                    </FieldGroup>
+                    <FieldGroup label="Details (optional)">
+                        <Textarea
+                            value={taskDescription}
+                            onChange={(e) => setTaskDescription(e.target.value)}
+                            placeholder="Optional detail…"
+                        />
+                    </FieldGroup>
                 </>
             )}
 
@@ -494,7 +573,7 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                                                 className="items-start whitespace-normal text-sm"
                                             >
                                                 <span className="mr-1 font-semibold text-navy">{key}.</span>
-                                                <span>{document.learning_outcomes[key]?.outcome}</span>
+                                                <span>{document.learning_outcomes[parseInt(key, 10) - 1]?.title}</span>
                                             </DropdownMenuCheckboxItem>
                                         ))}
                                     </DropdownMenuContent>
@@ -509,7 +588,7 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                                                 <div key={key} className="flex gap-1.5 text-xs text-muted-foreground">
                                                     <span className="font-semibold text-navy">{key}.</span>
                                                     <span className="line-clamp-1">
-                                                        {document.learning_outcomes[key]?.outcome}
+                                                        {document.learning_outcomes[parseInt(key, 10) - 1]?.title}
                                                     </span>
                                                 </div>
                                             ))}
@@ -518,10 +597,13 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                             </>
                         )}
                     </FieldGroup>
+                    <FieldGroup label="Title (optional)">
+                        <Input value={activityTitle} onChange={(e) => setActivityTitle(e.target.value)} placeholder="e.g. Group discussion" />
+                    </FieldGroup>
                     <div className="mb-3 flex gap-2.5">
                         <div className="flex-1">
-                            <Label className="mb-1.5 block">Time</Label>
-                            <Input value={activityTime} onChange={(e) => setActivityTime(e.target.value)} placeholder="e.g. 30 min" />
+                            <Label className="mb-1.5 block">Duration (minutes)</Label>
+                            <Input value={activityTime} onChange={(e) => setActivityTime(e.target.value)} placeholder="e.g. 30" inputMode="numeric" />
                         </div>
                         <div className="flex-1">
                             <Label className="mb-1.5 block">Type</Label>
@@ -566,24 +648,89 @@ const DrawerBody: React.FC<AddItemDrawerProps & {request: DrawerRequest}> = ({
                 </FieldGroup>
             )}
 
-            {request.type === 'resource' && (
+            {isReference && (
                 <>
                     <FieldGroup label="Title">
-                        <Input value={resTitle} onChange={(e) => setResTitle(e.target.value)} placeholder="Resource title" />
+                        <Input
+                            value={ref.title || ''}
+                            onChange={(e) => setRefField('title', e.target.value)}
+                            placeholder={request.type === 'source' ? 'Title of the work' : 'Resource title'}
+                        />
                     </FieldGroup>
-                    <FieldGroup label="Author (optional)">
-                        <Input value={resAuthor} onChange={(e) => setResAuthor(e.target.value)} placeholder="Author or publisher" />
+                    <FieldGroup label="Authors (optional)">
+                        <Input
+                            value={ref.authors || ''}
+                            onChange={(e) => setRefField('authors', e.target.value)}
+                            placeholder="e.g. Wilkinson MD, Dumontier M, et al"
+                        />
                     </FieldGroup>
+                    {request.type === 'source' && (
+                        <>
+                            <FieldGroup label="Type (optional)">
+                                <Input
+                                    value={ref.type || ''}
+                                    onChange={(e) => setRefField('type', e.target.value)}
+                                    placeholder="e.g. Internet, Journal article, Book"
+                                />
+                            </FieldGroup>
+                            <div className="mb-3.5 flex gap-2.5">
+                                <div className="flex-[2]">
+                                    <Label className="mb-1.5 block">Journal / container</Label>
+                                    <Input value={ref.journal || ''} onChange={(e) => setRefField('journal', e.target.value)} placeholder="Sci Data" />
+                                </div>
+                                <div className="flex-1">
+                                    <Label className="mb-1.5 block">Year</Label>
+                                    <Input value={ref.year || ''} onChange={(e) => setRefField('year', e.target.value)} placeholder="2016" />
+                                </div>
+                            </div>
+                            <FieldGroup label="Publisher (optional)">
+                                <Input value={ref.publisher || ''} onChange={(e) => setRefField('publisher', e.target.value)} />
+                            </FieldGroup>
+                            <div className="mb-3.5 flex gap-2.5">
+                                <div className="flex-1">
+                                    <Label className="mb-1.5 block">Volume</Label>
+                                    <Input value={ref.volume || ''} onChange={(e) => setRefField('volume', e.target.value)} />
+                                </div>
+                                <div className="flex-1">
+                                    <Label className="mb-1.5 block">Issue</Label>
+                                    <Input value={ref.number || ''} onChange={(e) => setRefField('number', e.target.value)} />
+                                </div>
+                                <div className="flex-1">
+                                    <Label className="mb-1.5 block">Pages</Label>
+                                    <Input value={ref.pages || ''} onChange={(e) => setRefField('pages', e.target.value)} />
+                                </div>
+                            </div>
+                            <FieldGroup label="Edition (optional)">
+                                <Input value={ref.edition || ''} onChange={(e) => setRefField('edition', e.target.value)} />
+                            </FieldGroup>
+                        </>
+                    )}
                     <FieldGroup label="URL">
-                        <Input value={resUrl} onChange={(e) => setResUrl(e.target.value)} placeholder="https://…" />
+                        <Input value={ref.url || ''} onChange={(e) => setRefField('url', e.target.value)} placeholder="https://…" />
                     </FieldGroup>
+                    {request.type === 'source' && (
+                        <FieldGroup label="Accessed (optional, for web pages)">
+                            <Input
+                                type="date"
+                                value={ref.accessed || ''}
+                                onChange={(e) => setRefField('accessed', e.target.value)}
+                            />
+                        </FieldGroup>
+                    )}
                     <FieldGroup label="DOI">
-                        <Input value={resDoi} onChange={(e) => setResDoi(e.target.value)} placeholder="10.xxxx/xxxx" />
+                        <Input value={ref.doi || ''} onChange={(e) => setRefField('doi', e.target.value)} placeholder="10.xxxx/xxxx" />
+                        {!doiIsValid && (
+                            <div className="mt-1 text-xs text-destructive">
+                                Enter the bare DOI, e.g. 10.1038/sdata.2016.18 (no https://doi.org/ prefix).
+                            </div>
+                        )}
                     </FieldGroup>
-                    <FieldGroup label="Additional information (optional)">
-                        <Textarea value={resInfo} onChange={(e) => setResInfo(e.target.value)} placeholder="Notes about this resource…" />
+                    <FieldGroup label="Note (optional)">
+                        <Textarea value={ref.note || ''} onChange={(e) => setRefField('note', e.target.value)} placeholder="Notes about this reference…" />
                     </FieldGroup>
-                    <div className="mb-1 text-[11.5px] text-zinc-400">Provide a URL or a DOI.</div>
+                    {request.type === 'resource' && (
+                        <div className="mb-1 text-[11.5px] text-zinc-400">Provide a URL or a DOI.</div>
+                    )}
                 </>
             )}
 
@@ -612,7 +759,7 @@ const AddItemDrawer: React.FC<AddItemDrawerProps> = (props) => {
                     side="right"
                     className="w-full sm:max-w-md"
                     // Remount the form whenever the target changes so local state resets.
-                    key={`${request.type}-${request.mode}-${request.section ?? ''}-${request.index ?? ''}-${request.outcomeKey ?? ''}`}
+                    key={`${request.type}-${request.mode}-${request.section ?? ''}-${request.index ?? ''}`}
                 >
                     <div className="flex h-full flex-col overflow-y-auto p-6">
                         <DrawerBody {...props} request={request} />

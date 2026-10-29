@@ -83,7 +83,7 @@ const SetupStepper: React.FC<SetupStepperProps> = ({onComplete}) => {
         });
 
         if (uncategorizedPlans.length > 0) {
-            categorizedPlans.push({category: 'Uncategorized', plans: uncategorizedPlans});
+            categorizedPlans.push({category: 'Lesson plans', plans: uncategorizedPlans});
         }
         return categorizedPlans;
     };

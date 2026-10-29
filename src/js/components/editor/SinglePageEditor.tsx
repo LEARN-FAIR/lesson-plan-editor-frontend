@@ -21,11 +21,13 @@ const computeCompletion = (doc: FairMarkdownDocument): Record<SectionKey, boolea
     const activityCount =
         (activities.before?.length || 0) + (activities.during?.length || 0) + (activities.after?.length || 0);
     return {
-        general: !!(doc.title && doc.number && doc.description),
+        general: !!(doc.title && doc.number && (doc.summary || doc.description)),
         authors: (doc.authors?.length || 0) > 0,
-        outcomes: Object.keys(doc.learning_outcomes || {}).length > 0,
+        outcomes: (doc.learning_outcomes?.length || 0) > 0,
         activities: activityCount > 0,
+        delivery: !!(doc.take_home || doc.tasks?.length || doc.tasks_text || doc.materials?.participants || doc.materials?.trainer),
         prerequisites: (doc.prerequisites?.length || 0) > 0,
+        sources: (doc.sources?.length || 0) > 0,
         resources: (doc.additionalResources?.length || 0) > 0,
         content: !!(doc.content && doc.content.trim().length > 0),
     };
@@ -49,7 +51,9 @@ const SinglePageEditor: React.FC<SinglePageEditorProps> = ({
         authors: useRef<HTMLDivElement>(null),
         outcomes: useRef<HTMLDivElement>(null),
         activities: useRef<HTMLDivElement>(null),
+        delivery: useRef<HTMLDivElement>(null),
         prerequisites: useRef<HTMLDivElement>(null),
+        sources: useRef<HTMLDivElement>(null),
         resources: useRef<HTMLDivElement>(null),
         content: useRef<HTMLDivElement>(null),
     };

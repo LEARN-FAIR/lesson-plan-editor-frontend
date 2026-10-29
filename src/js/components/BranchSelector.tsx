@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {useQueryClient} from '@tanstack/react-query';
 import {GitBranch, Plus, TriangleAlert} from 'lucide-react';
 import type {Branch, Repository} from '../types/github';
-import githubService from '../services/githubService';
+import githubService, {isAppAuthorizationError} from '../services/githubService';
 import apiAdapter from '../services/apiAdapter';
 import logger from '../utils/logger';
 import {useBranches} from '../services/githubRepoQueryHooks';
@@ -160,13 +160,13 @@ const BranchSelector: React.FC<BranchSelectorProps> = ({onBranchSelected, reposi
         } catch (err) {
             logger.error('Error creating branch:', err);
             const errorMessage = (err as Error).message;
-            if (errorMessage.includes('Resource not accessible by integration') && repository) {
+            if (isAppAuthorizationError(err) && repository) {
                 setInstallationUrl(githubService.getAppInstallationUrl(repository.owner.login, repository.name));
                 setIsCreateDialogOpen(false);
                 setIsAppInstallDialogOpen(true);
                 return;
             }
-            setCreateError(`Failed to create branch: ${errorMessage}`);
+            setCreateError(errorMessage);
         } finally {
             setCreatingBranch(false);
         }

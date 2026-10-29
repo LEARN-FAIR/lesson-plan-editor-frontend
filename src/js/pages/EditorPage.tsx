@@ -1,10 +1,10 @@
 import React, {useEffect, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
-import {Download, GitBranch, GitCommitHorizontal, X} from 'lucide-react';
+import {Download, GitBranch, GitCommitHorizontal, RefreshCw, TriangleAlert, X} from 'lucide-react';
 import {useRepositories} from '../services/githubRepoQueryHooks';
 import {useFileContent} from '../services/githubQueryHooks';
 import {exportMarkdownFile, getCurrentFilename} from '../services/markdownService';
-import {parseMarkdown, serializeMarkdown} from '../utils/markdownUtils';
+import {MarkdownParseError, parseMarkdown, serializeMarkdown} from '../utils/markdownUtils';
 import {constructLessonPath} from '../utils/urlUtils';
 import logger from '../utils/logger';
 import type {FairMarkdownDocument} from '../types';
@@ -13,6 +13,7 @@ import CommitReviewView from '../components/CommitReviewView';
 import SinglePageEditor from '../components/editor/SinglePageEditor';
 import {Button} from '../components/ui/button';
 import {PageSpinner} from '../components/ui/spinner';
+import {Alert, AlertDescription, AlertTitle} from '../components/ui/alert';
 import {
     Dialog,
     DialogContent,
@@ -30,15 +31,22 @@ const EditorPage: React.FC = () => {
     // The serialized content as first loaded / last committed — used to detect edits.
     const [baselineContent, setBaselineContent] = useState<string | null>(null);
     const [leaveOpen, setLeaveOpen] = useState<boolean>(false);
+    const [parseError, setParseError] = useState<MarkdownParseError>();
 
-    const params = useParams<{owner: string; repo: string; branch: string; category: string; lesson: string}>();
+    const params = useParams<{owner: string; repo: string; branch: string; category?: string; lesson: string}>();
     const {owner, repo, branch, category, lesson} = params;
-    const fullLessonPath = category && lesson ? constructLessonPath(category, lesson) : '';
+    const fullLessonPath = lesson ? constructLessonPath(category, lesson) : '';
 
     const {repositories = []} = useRepositories();
     const repository = repositories.find((r) => r.owner.login === owner && r.name === repo);
 
-    const {data: fileContent, isLoading: isLoadingFileContent} = useFileContent(
+    const {
+        data: fileContent,
+        error: fileContentError,
+        isError: isFileContentError,
+        isLoading: isLoadingFileContent,
+        refetch: refetchFileContent,
+    } = useFileContent(
         owner || '',
         repo || '',
         fullLessonPath,
@@ -48,19 +56,30 @@ const EditorPage: React.FC = () => {
 
     useEffect(() => {
         if (fileContent !== undefined) {
-            const parsed = parseMarkdown(fileContent);
-            setDocument(parsed);
-            // Seed the serialized content so the Commit button + diff are available
-            // immediately (not only after the first edit).
             try {
+                const parsed = parseMarkdown(fileContent);
+                setDocument(parsed);
+                setParseError(undefined);
+                // Seed the serialized content so the Commit button + diff are available
+                // immediately (not only after the first edit).
                 const serialized = serializeMarkdown(parsed);
                 setMarkdownContent(serialized);
                 setBaselineContent((prev) => prev ?? serialized);
             } catch (error) {
-                logger.error('Error serializing markdown:', error);
+                logger.error('Error loading markdown:', error);
+                setDocument(undefined);
+                setParseError(error instanceof MarkdownParseError
+                    ? error
+                    : new MarkdownParseError('The lesson file could not be read.'));
             }
         }
     }, [fileContent]);
+
+    const loadError = parseError || (isFileContentError
+        ? new MarkdownParseError(fileContentError instanceof Error
+            ? fileContentError.message
+            : 'The lesson file could not be loaded.')
+        : undefined);
 
     const normalize = (s: string) => s.replace(/\r\n/g, '\n').trim();
     const hasUnsavedChanges =
@@ -90,6 +109,41 @@ const EditorPage: React.FC = () => {
         window.addEventListener('popstate', onPopState);
         return () => window.removeEventListener('popstate', onPopState);
     }, [hasUnsavedChanges]);
+
+    if (loadError) {
+        return (
+            <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-6 font-sans">
+                <main className="w-full max-w-2xl rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
+                    <Alert variant="error" className="items-start gap-3 p-4 text-sm">
+                        <TriangleAlert className="mt-0.5 h-5 w-5" />
+                        <div>
+                            <AlertTitle className="text-base">Unable to open this lesson plan</AlertTitle>
+                            <AlertDescription className="mt-2 text-sm">
+                                {parseError
+                                    ? 'Fix the YAML front matter in the source file, then reload the editor.'
+                                    : 'The lesson file could not be retrieved. Check your access and try again.'}
+                            </AlertDescription>
+                            {loadError.reason && (
+                                <p className="mt-3 font-mono text-xs">YAML error: {loadError.reason}</p>
+                            )}
+                            {loadError.line && (
+                                <p className="mt-1 font-mono text-xs">
+                                    Location: line {loadError.line}{loadError.column ? `, column ${loadError.column}` : ''}
+                                </p>
+                            )}
+                        </div>
+                    </Alert>
+                    <div className="mt-6 flex gap-3">
+                        <Button variant="secondary" onClick={() => navigate('/')}>Back to lesson selection</Button>
+                        <Button variant="outline" onClick={() => refetchFileContent()}>
+                            <RefreshCw className="h-4 w-4" />
+                            Try again
+                        </Button>
+                    </div>
+                </main>
+            </div>
+        );
+    }
 
     if (isLoadingFileContent || fileContent === undefined || document === undefined) {
         return <PageSpinner />;

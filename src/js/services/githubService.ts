@@ -7,6 +7,7 @@
 // Import the API adapter
 import apiAdapter from './apiAdapter';
 import logger from '../utils/logger';
+import {ApiError, ApiErrorCode} from './apiError';
 
 // Types for file parameters
 export interface CommitFileParams {
@@ -344,6 +345,22 @@ class GitHubService {
         return apiAdapter.getFileContent(owner, repo, path, branch);
     }
 }
+
+/**
+ * Whether an error means the GitHub App is not authorized to write to the repo
+ * (not installed, or missing "Contents: read & write"). When true, the UI offers
+ * to install / authorize the app instead of showing the raw error.
+ *
+ * Switches on the backend's machine-readable error code; the raw-phrase check is
+ * only a fallback for a backend not yet returning codes.
+ */
+export const isAppAuthorizationError = (error: unknown): boolean => {
+    if (error instanceof ApiError) {
+        return error.is(ApiErrorCode.GithubAppNotAuthorized);
+    }
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    return message.includes('Resource not accessible by integration');
+};
 
 // Create singleton instance
 const githubService = new GitHubService();

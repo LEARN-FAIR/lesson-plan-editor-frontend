@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {ArrowLeft, Check, FileText, Folder, GitBranch, Github, TriangleAlert} from 'lucide-react';
 import {useQueryClient} from '@tanstack/react-query';
 import ReactDiffViewer from 'react-diff-viewer-continued';
-import githubService, {type CommitFileParams} from '../services/githubService';
+import githubService, {type CommitFileParams, isAppAuthorizationError} from '../services/githubService';
 import type {Repository} from '../types/github';
 import type {FairMarkdownDocument} from '../types';
 import {useHasCommitsOnBranch} from '../services/githubQueryHooks';
@@ -159,11 +159,11 @@ const CommitReviewView: React.FC<CommitReviewViewProps> = ({
             }, 500);
         } catch (err) {
             const message = (err as Error).message;
-            if (message.includes('Resource not accessible by integration')) {
+            if (isAppAuthorizationError(err)) {
                 setInstallationUrl(githubService.getAppInstallationUrl(owner, repoName));
                 setIsAppInstallDialogOpen(true);
             } else {
-                setError(`Failed to commit to GitHub: ${message}`);
+                setError(message);
             }
         } finally {
             setIsLoading(false);

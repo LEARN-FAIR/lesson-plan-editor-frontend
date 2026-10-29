@@ -1,7 +1,21 @@
 import {useQuery} from '@tanstack/react-query';
 import lessonPlanService from './lessonPlanService';
 import githubService from './githubService';
+import apiAdapter from './apiAdapter';
 import type {LessonPlan} from "../types/lessonPlan";
+
+/**
+ * Public (unauthenticated) hook to fetch a published lesson plan's markdown by
+ * its public slug. Repo/branch resolution is handled by the backend.
+ */
+export const usePublicLessonContent = (category?: string, lesson?: string) => {
+    return useQuery<string, Error>({
+        queryKey: ['publicLessonContent', category, lesson],
+        queryFn: () => apiAdapter.getPublicLessonContent(category as string, lesson as string),
+        staleTime: 5 * 60 * 1000,
+        enabled: !!category && !!lesson,
+    });
+};
 
 /**
  * React Query hook to fetch lesson plan content

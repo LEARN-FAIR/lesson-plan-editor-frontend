@@ -4,6 +4,7 @@ import {BrowserRouter as Router, Navigate, Route, Routes} from 'react-router-dom
 import EditorPage from './pages/EditorPage';
 import SetupPage from './pages/SetupPage';
 import LoginPage from './pages/LoginPage';
+import SuggestChangesPage from './pages/SuggestChangesPage';
 import EditorPreview from './pages/EditorPreview'; // TEMP: redesign preview harness
 
 // Components
@@ -23,6 +24,9 @@ function App() {
                         {/* TEMP: redesign preview (no auth) */}
                         <Route path="/preview-editor" element={<EditorPreview/>}/>
 
+                        {/* Public "Suggest changes" form (no auth required to draft) */}
+                        <Route path="/suggest/:category/:lesson" element={<SuggestChangesPage/>}/>
+
                         {/* Login Page Route */}
                         <Route path="/login" element={<LoginPage/>}/>
 
@@ -30,6 +34,11 @@ function App() {
                         <Route path="/" element={<ProtectedRoute element={<SetupPage/>}/>}/>
 
                         {/* Editor Page Route */}
+                        <Route
+                            path="/editor/:owner/:repo/:branch/:lesson"
+                            element={<ProtectedRoute element={<EditorPage/>}/>}
+                        />
+                        {/* Legacy layout: _lesson-plans/<category>/topics/<lesson> */}
                         <Route
                             path="/editor/:owner/:repo/:branch/:category/:lesson"
                             element={<ProtectedRoute element={<EditorPage/>}/>}

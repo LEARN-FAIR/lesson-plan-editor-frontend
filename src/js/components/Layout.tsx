@@ -11,10 +11,14 @@ const Layout: React.FC<LayoutProps> = ({children}) => {
     const location = useLocation();
     const {isLoading} = useAuth();
 
-    const isAuthPage = location.pathname === '/login' || location.pathname === '/github-callback';
+    // Public paths render immediately, without waiting on the auth-status probe.
+    const isPublicPage =
+        location.pathname === '/login' ||
+        location.pathname === '/github-callback' ||
+        location.pathname.startsWith('/suggest');
 
     // While auth state is resolving, render a minimal loading layout.
-    if (isLoading && !isAuthPage) {
+    if (isLoading && !isPublicPage) {
         return <PageSpinner />;
     }
 
